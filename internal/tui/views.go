@@ -24,6 +24,8 @@ func newView(name string) tea.Model {
 		return newWorktreesView()
 	case "Sessions":
 		return newListView("Sessions")
+	case "Planning Sessions":
+		return newPlanningSessionsView()
 	default:
 		return stubView{name: name}
 	}

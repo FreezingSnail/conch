@@ -36,6 +36,8 @@ type Request struct {
 	Repos         []string `json:"repos,omitempty"`
 	SessionID     int64    `json:"session_id,omitempty"`
 	KiroSessionID string   `json:"kiro_session_id,omitempty"`
+	BeforeIDs     string   `json:"before_ids,omitempty"`
+	Worktree      string   `json:"worktree,omitempty"`
 }
 
 // Response is the daemon's reply. OK is false and Error is set on any failure.

@@ -11,12 +11,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/FreezingSnail/conch/internal/client"
 	"github.com/FreezingSnail/conch/internal/config"
 	"github.com/FreezingSnail/conch/internal/db"
 	"github.com/FreezingSnail/conch/internal/git"
 	"github.com/FreezingSnail/conch/internal/harness"
+	"github.com/FreezingSnail/conch/internal/kiro"
 )
 
 // SockAddr returns the canonical Unix socket path under $HOME/.conch.
@@ -355,6 +357,34 @@ func dispatch(req client.Request, database *db.DB) client.Response {
 			return client.Response{Error: "session_id and kiro_session_id required"}
 		}
 		if err := database.SetSessionKiroID(req.SessionID, req.KiroSessionID); err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		return client.Response{OK: true}
+
+	case "update_session_status":
+		if req.SessionID == 0 || req.Status == "" {
+			return client.Response{Error: "session_id and status required"}
+		}
+		if err := database.UpdateSessionStatus(req.SessionID, req.Status); err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		return client.Response{OK: true}
+
+	case "plan_complete":
+		// plan_complete is called by the tmux wrapper script after kiro exits.
+		// It diffs kiro sessions to capture the new UUID, then marks the session completed.
+		if req.SessionID == 0 || req.Worktree == "" {
+			return client.Response{Error: "session_id and worktree required"}
+		}
+		var before []string
+		if req.BeforeIDs != "" {
+			before = strings.Split(req.BeforeIDs, ",")
+		}
+		afterIDs := kiro.ListSessionIDs(req.Worktree)
+		if uuid := kiro.NewSessionID(before, afterIDs); uuid != "" {
+			database.SetSessionKiroID(req.SessionID, uuid) //nolint:errcheck
+		}
+		if err := database.UpdateSessionStatus(req.SessionID, "completed"); err != nil {
 			return client.Response{Error: err.Error()}
 		}
 		return client.Response{OK: true}

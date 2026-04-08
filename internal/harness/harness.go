@@ -2,8 +2,14 @@
 package harness
 
 import (
+	"fmt"
+	"os"
 	"os/exec"
+	"strings"
 )
+
+// InTmux reports whether the current process is running inside a tmux session.
+func InTmux() bool { return os.Getenv("TMUX") != "" }
 
 // Harness abstracts a CLI agent that can run interactively or in the background.
 type Harness interface {
@@ -36,6 +42,29 @@ func (k Kiro) Background(prompt string) *exec.Cmd {
 	return exec.Command("kiro-cli", "chat", "--no-interactive", "--trust-all-tools", prompt)
 }
 
+// SpawnTmuxPane opens a new tmux pane running kiro-cli, then calls back to the
+// conch daemon via `conch notify` when kiro exits.
+// agent and prompt may be empty to launch the interactive session picker.
+func (k Kiro) SpawnTmuxPane(agent, prompt, dir string, sessionID int64, beforeIDs string) error {
+	var kiroCmd string
+	if agent != "" {
+		kiroCmd = fmt.Sprintf("kiro-cli chat --agent %s --trust-all-tools %q", agent, prompt)
+	} else {
+		kiroCmd = "kiro-cli chat"
+	}
+	notify := fmt.Sprintf("conch notify --session-id %d --worktree %q --before-ids %q",
+		sessionID, dir, beforeIDs)
+	// Run kiro; on exit (success or failure) call conch notify.
+	shellCmd := fmt.Sprintf("cd %q && %s; %s", dir, kiroCmd, notify)
+	return exec.Command("tmux", "split-window", "-h", shellCmd).Run()
+}
+
+// SpawnTmuxPaneResume opens a new tmux pane with the kiro-cli session picker in dir.
+func (k Kiro) SpawnTmuxPaneResume(dir string) error {
+	shellCmd := fmt.Sprintf("cd %q && kiro-cli chat", dir)
+	return exec.Command("tmux", "split-window", "-h", shellCmd).Run()
+}
+
 // Get returns the Harness for the given name. Returns Kiro for any unrecognized name.
 func Get(name string) Harness {
 	switch name {
@@ -45,3 +74,7 @@ func Get(name string) Harness {
 		return Kiro{}
 	}
 }
+
+// JoinIDs joins a slice of session IDs into the comma-separated string used by
+// the notify callback.
+func JoinIDs(ids []string) string { return strings.Join(ids, ",") }

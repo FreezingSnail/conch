@@ -6,7 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-var menuItems = []string{"Plan", "Execute", "Tickets", "New Ticket", "Worktrees", "Sessions"}
+var menuItems = []string{"Plan", "Execute", "Tickets", "New Ticket", "Worktrees", "Sessions", "Planning Sessions"}
 
 type menu struct {
 	cursor int
