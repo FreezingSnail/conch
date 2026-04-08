@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -14,7 +13,7 @@ import (
 func newView(name string) tea.Model {
 	switch name {
 	case "Plan":
-		return planView{}
+		return newPlanningWizard()
 	case "Execute":
 		return newExecuteView()
 	case "Tickets":
@@ -45,56 +44,13 @@ func (s stubView) View() string {
 	return fmt.Sprintf("  %s\n\n  (stub — press esc to go back)\n", s.name)
 }
 
-// --- plan view ---
-
-type planView struct {
-	done bool
-	err  string
-}
-
-type planDoneMsg struct{ err error }
-
-func (p planView) Init() tea.Cmd { return nil }
-
-func (p planView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "esc", "q":
-			return p, pop()
-		case "enter":
-			return p, tea.ExecProcess(exec.Command("kiro"), func(err error) tea.Msg {
-				return planDoneMsg{err: err}
-			})
-		}
-	case planDoneMsg:
-		p.done = true
-		if msg.err != nil {
-			p.err = msg.err.Error()
-		}
-		// record session in daemon
-		client.Send(client.Request{Action: "create_session", Harness: "kiro", Status: "completed"})
-		return p, nil
-	}
-	return p, nil
-}
-
-func (p planView) View() string {
-	if p.done {
-		if p.err != "" {
-			return fmt.Sprintf("  Plan session ended with error: %s\n\n  press esc to go back\n", p.err)
-		}
-		return "  Plan session completed. Session recorded.\n\n  press esc to go back\n"
-	}
-	return "  Plan\n\n  Press enter to start a planning session (kiro)\n  Press esc to go back\n"
-}
-
 // --- execute view ---
 
 type executeView struct {
 	input   string
 	status  string
 	polling bool
+	width   int
 }
 
 type pollMsg struct{}
@@ -105,6 +61,8 @@ func (e executeView) Init() tea.Cmd { return nil }
 
 func (e executeView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		e.width = msg.Width
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "esc":
@@ -150,7 +108,7 @@ func (e executeView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (e executeView) View() string {
 	s := "  Execute\n\n"
-	s += fmt.Sprintf("  Prompt: %s█\n\n", e.input)
+	s += wrapInput("Prompt: ", e.input, e.width) + "\n\n"
 	if e.status != "" {
 		s += fmt.Sprintf("  Status: %s\n\n", e.status)
 	}

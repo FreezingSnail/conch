@@ -15,7 +15,7 @@ func TestDB(t *testing.T) {
 	}
 	defer d.Close()
 
-	ticketID, err := d.CreateTicket("test ticket", "desc", "myrepo")
+	ticketID, err := d.CreateTicket("PROJ-1", "test ticket", "desc", "myrepo")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestDB(t *testing.T) {
 		t.Fatalf("expected 2 tasks, got %d", len(tasks))
 	}
 
-	sessionID, err := d.CreateSession("kiro", "running")
+	sessionID, err := d.CreateSession(0, "kiro", "running")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestGetTicketByID(t *testing.T) {
 	}
 	defer d.Close()
 
-	id, err := d.CreateTicket("hello", "world", "repo1")
+	id, err := d.CreateTicket("PROJ-2", "hello", "world", "repo1")
 	if err != nil {
 		t.Fatal(err)
 	}

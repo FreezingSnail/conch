@@ -14,11 +14,11 @@ type repoPickerView struct {
 	repos    []string
 	cursor   int
 	loaded   bool
-	// after repo selected, collect title
 	selected string
 	title    string
 	typing   bool
 	status   string
+	width    int
 }
 
 type reposLoadedMsg struct{ repos []string }
@@ -40,6 +40,9 @@ func (v repoPickerView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case reposLoadedMsg:
 		v.repos = msg.repos
 		v.loaded = true
+
+	case tea.WindowSizeMsg:
+		v.width = msg.Width
 
 	case tea.KeyMsg:
 		if !v.loaded {
@@ -112,7 +115,7 @@ func (v repoPickerView) View() string {
 	}
 	if v.typing {
 		s := fmt.Sprintf("  New Ticket — %s\n\n", filepath.Base(v.selected))
-		s += fmt.Sprintf("  Title: %s█\n\n", v.title)
+		s += wrapInput("Title: ", v.title, v.width) + "\n\n"
 		if v.status != "" {
 			s += "  " + v.status + "\n\n"
 		}

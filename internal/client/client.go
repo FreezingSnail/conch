@@ -19,31 +19,37 @@ func sockAddr() string {
 
 // Request maps 1:1 to daemon actions. Unused fields are omitted from JSON via omitempty.
 type Request struct {
-	Action      string `json:"action"`
-	Prompt      string `json:"prompt,omitempty"`
-	Harness     string `json:"harness,omitempty"`
-	Status      string `json:"status,omitempty"`
-	TaskID      int64  `json:"task_id,omitempty"`
-	TicketID    int64  `json:"ticket_id,omitempty"`
-	Title       string `json:"title,omitempty"`
-	Body        string `json:"body,omitempty"`
-	BlockerID   int64  `json:"blocker_id,omitempty"`
-	BlockedID   int64  `json:"blocked_id,omitempty"`
-	Repo        string `json:"repo,omitempty"`
-	Description string `json:"description,omitempty"`
+	Action        string   `json:"action"`
+	Prompt        string   `json:"prompt,omitempty"`
+	Harness       string   `json:"harness,omitempty"`
+	Status        string   `json:"status,omitempty"`
+	TaskID        int64    `json:"task_id,omitempty"`
+	TicketID      int64    `json:"ticket_id,omitempty"`
+	Title         string   `json:"title,omitempty"`
+	Body          string   `json:"body,omitempty"`
+	BlockerID     int64    `json:"blocker_id,omitempty"`
+	BlockedID     int64    `json:"blocked_id,omitempty"`
+	Repo          string   `json:"repo,omitempty"`
+	Description   string   `json:"description,omitempty"`
+	TicketNumber  string   `json:"ticket_number,omitempty"`
+	Context       string   `json:"context,omitempty"`
+	Repos         []string `json:"repos,omitempty"`
+	SessionID     int64    `json:"session_id,omitempty"`
+	KiroSessionID string   `json:"kiro_session_id,omitempty"`
 }
 
 // Response is the daemon's reply. OK is false and Error is set on any failure.
 type Response struct {
-	OK       bool         `json:"ok"`
-	Error    string       `json:"error,omitempty"`
-	Sessions []db.Session `json:"sessions,omitempty"`
-	Tickets  []db.Ticket  `json:"tickets,omitempty"`
-	Tasks    []db.Task    `json:"tasks,omitempty"`
-	Task     *db.Task     `json:"task,omitempty"`
-	ID       int64        `json:"id,omitempty"`
-	Repos    []string     `json:"repos,omitempty"`
-	Lines    []string     `json:"lines,omitempty"`
+	OK        bool         `json:"ok"`
+	Error     string       `json:"error,omitempty"`
+	Sessions  []db.Session `json:"sessions,omitempty"`
+	Tickets   []db.Ticket  `json:"tickets,omitempty"`
+	Tasks     []db.Task    `json:"tasks,omitempty"`
+	Task      *db.Task     `json:"task,omitempty"`
+	ID        int64        `json:"id,omitempty"`
+	SessionID int64        `json:"session_id,omitempty"`
+	Repos     []string     `json:"repos,omitempty"`
+	Lines     []string     `json:"lines,omitempty"`
 }
 
 // Send dials the socket, writes one JSON line, and reads one JSON line back.

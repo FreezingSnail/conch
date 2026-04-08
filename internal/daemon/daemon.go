@@ -72,7 +72,7 @@ func dispatch(req client.Request, database *db.DB) client.Response {
 		if s == "" {
 			s = "completed"
 		}
-		id, err := database.CreateSession(h, s)
+		id, err := database.CreateSession(0, h, s)
 		if err != nil {
 			return client.Response{Error: err.Error()}
 		}
@@ -82,7 +82,7 @@ func dispatch(req client.Request, database *db.DB) client.Response {
 		if req.Prompt == "" {
 			return client.Response{Error: "prompt required"}
 		}
-		id, err := database.CreateSession("kiro", "running")
+		id, err := database.CreateSession(0, "kiro", "running")
 		if err != nil {
 			return client.Response{Error: err.Error()}
 		}
@@ -184,7 +184,7 @@ func dispatch(req client.Request, database *db.DB) client.Response {
 		if req.Title == "" {
 			return client.Response{Error: "title required"}
 		}
-		id, err := database.CreateTicket(req.Title, req.Description, req.Repo)
+		id, err := database.CreateTicket(req.TicketNumber, req.Title, req.Description, req.Repo)
 		if err != nil {
 			return client.Response{Error: err.Error()}
 		}
@@ -322,6 +322,42 @@ func dispatch(req client.Request, database *db.DB) client.Response {
 		cmd.Dir = t.WorktreePath
 		out, _ := cmd.CombinedOutput()
 		return client.Response{OK: true, Lines: []string{string(out)}}
+
+	case "plan_setup":
+		// plan_setup atomically creates a ticket, one worktree per repo, and a
+		// running session. Returns ticket ID and session ID.
+		if req.TicketNumber == "" || req.Title == "" || len(req.Repos) == 0 {
+			return client.Response{Error: "ticket_number, title, and repos required"}
+		}
+		ticketID, err := database.CreateTicket(req.TicketNumber, req.Title, req.Description, req.Repos[0])
+		if err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		for _, repo := range req.Repos {
+			base := filepath.Base(repo)
+			wtPath := filepath.Join(os.Getenv("HOME"), ".conch", "worktrees", req.TicketNumber, base)
+			if err := git.WorktreeAdd(repo, wtPath, req.TicketNumber); err != nil {
+				return client.Response{Error: fmt.Sprintf("worktree for %s: %s", base, err.Error())}
+			}
+			if err := database.CreateWorktree(ticketID, repo, wtPath); err != nil {
+				return client.Response{Error: err.Error()}
+			}
+		}
+		sessionID, err := database.CreateSession(ticketID, "kiro", "running")
+		if err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		return client.Response{OK: true, ID: ticketID, SessionID: sessionID}
+
+	case "set_kiro_session":
+		// set_kiro_session stores the kiro-cli UUID on an existing session row.
+		if req.SessionID == 0 || req.KiroSessionID == "" {
+			return client.Response{Error: "session_id and kiro_session_id required"}
+		}
+		if err := database.SetSessionKiroID(req.SessionID, req.KiroSessionID); err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		return client.Response{OK: true}
 
 	default:
 		return client.Response{Error: "unknown action"}

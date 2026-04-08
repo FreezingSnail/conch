@@ -75,16 +75,24 @@ func (d *DB) migrate() error {
 			payload TEXT,
 			created_at DATETIME NOT NULL
 		);
+		CREATE TABLE IF NOT EXISTS worktrees (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			ticket_id INTEGER NOT NULL,
+			repo TEXT NOT NULL,
+			worktree_path TEXT NOT NULL
+		);
 	`)
 	if err != nil {
 		return err
 	}
-	// Additive migrations for existing DBs
-	for _, col := range []string{
+	// Additive migrations for existing DBs — ignore errors when column already exists.
+	for _, stmt := range []string{
 		`ALTER TABLE tickets ADD COLUMN repo TEXT`,
 		`ALTER TABLE tickets ADD COLUMN worktree_path TEXT`,
+		`ALTER TABLE tickets ADD COLUMN ticket_number TEXT`,
+		`ALTER TABLE sessions ADD COLUMN kiro_session_id TEXT`,
 	} {
-		d.conn.Exec(col) // ignore error — column may already exist
+		d.conn.Exec(stmt)
 	}
 	return nil
 }
@@ -96,6 +104,7 @@ func (d *DB) Close() error { return d.conn.Close() }
 // Ticket represents a unit of work, optionally linked to a git repo and worktree.
 type Ticket struct {
 	ID           int64
+	TicketNumber string // Free-text identifier, e.g. "PROJ-123".
 	Title        string
 	Description  string
 	Status       string
@@ -105,10 +114,11 @@ type Ticket struct {
 	CreatedAt    time.Time
 }
 
-func (d *DB) CreateTicket(title, description, repo string) (int64, error) {
+// CreateTicket inserts a new ticket and returns its auto-increment ID.
+func (d *DB) CreateTicket(ticketNumber, title, description, repo string) (int64, error) {
 	res, err := d.conn.Exec(
-		`INSERT INTO tickets (title, description, status, repo, created_at) VALUES (?, ?, 'open', ?, ?)`,
-		title, description, repo, time.Now(),
+		`INSERT INTO tickets (ticket_number, title, description, status, repo, created_at) VALUES (?, ?, ?, 'open', ?, ?)`,
+		ticketNumber, title, description, repo, time.Now(),
 	)
 	if err != nil {
 		return 0, err
@@ -116,13 +126,57 @@ func (d *DB) CreateTicket(title, description, repo string) (int64, error) {
 	return res.LastInsertId()
 }
 
+// Worktree records a single git worktree created for a ticket in a specific repo.
+type Worktree struct {
+	ID           int64
+	TicketID     int64
+	Repo         string
+	WorktreePath string
+}
+
+// CreateWorktree records a worktree for the given ticket and repo.
+func (d *DB) CreateWorktree(ticketID int64, repo, path string) error {
+	_, err := d.conn.Exec(
+		`INSERT INTO worktrees (ticket_id, repo, worktree_path) VALUES (?, ?, ?)`,
+		ticketID, repo, path,
+	)
+	return err
+}
+
+// ListWorktreesByTicket returns all worktrees associated with a ticket.
+func (d *DB) ListWorktreesByTicket(ticketID int64) ([]Worktree, error) {
+	rows, err := d.conn.Query(
+		`SELECT id, ticket_id, repo, worktree_path FROM worktrees WHERE ticket_id=?`, ticketID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var wts []Worktree
+	for rows.Next() {
+		var w Worktree
+		if err := rows.Scan(&w.ID, &w.TicketID, &w.Repo, &w.WorktreePath); err != nil {
+			return nil, err
+		}
+		wts = append(wts, w)
+	}
+	return wts, nil
+}
+
+// SetSessionKiroID stores the kiro-cli session UUID on an existing session row.
+func (d *DB) SetSessionKiroID(sessionID int64, kiroSessionID string) error {
+	_, err := d.conn.Exec(`UPDATE sessions SET kiro_session_id=? WHERE id=?`, kiroSessionID, sessionID)
+	return err
+}
+
 func (d *DB) SetTicketRepo(id int64, repo, worktreePath string) error {
 	_, err := d.conn.Exec(`UPDATE tickets SET repo=?, worktree_path=? WHERE id=?`, repo, worktreePath, id)
 	return err
 }
 
+// ListTickets returns all tickets ordered by creation time descending.
 func (d *DB) ListTickets() ([]Ticket, error) {
-	rows, err := d.conn.Query(`SELECT id, title, description, status, COALESCE(dependencies,''), COALESCE(repo,''), COALESCE(worktree_path,''), created_at FROM tickets ORDER BY created_at DESC`)
+	rows, err := d.conn.Query(`SELECT id, COALESCE(ticket_number,''), title, description, status, COALESCE(dependencies,''), COALESCE(repo,''), COALESCE(worktree_path,''), created_at FROM tickets ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +184,7 @@ func (d *DB) ListTickets() ([]Ticket, error) {
 	var tickets []Ticket
 	for rows.Next() {
 		var t Ticket
-		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.Status, &t.Dependencies, &t.Repo, &t.WorktreePath, &t.CreatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.TicketNumber, &t.Title, &t.Description, &t.Status, &t.Dependencies, &t.Repo, &t.WorktreePath, &t.CreatedAt); err != nil {
 			return nil, err
 		}
 		tickets = append(tickets, t)
@@ -142,8 +196,8 @@ func (d *DB) ListTickets() ([]Ticket, error) {
 func (d *DB) GetTicketByID(id int64) (Ticket, error) {
 	var t Ticket
 	err := d.conn.QueryRow(
-		`SELECT id, title, description, status, COALESCE(dependencies,''), COALESCE(repo,''), COALESCE(worktree_path,''), created_at FROM tickets WHERE id=?`, id,
-	).Scan(&t.ID, &t.Title, &t.Description, &t.Status, &t.Dependencies, &t.Repo, &t.WorktreePath, &t.CreatedAt)
+		`SELECT id, COALESCE(ticket_number,''), title, description, status, COALESCE(dependencies,''), COALESCE(repo,''), COALESCE(worktree_path,''), created_at FROM tickets WHERE id=?`, id,
+	).Scan(&t.ID, &t.TicketNumber, &t.Title, &t.Description, &t.Status, &t.Dependencies, &t.Repo, &t.WorktreePath, &t.CreatedAt)
 	return t, err
 }
 
@@ -264,11 +318,21 @@ type Session struct {
 	EndedAt   *time.Time // Nil while the session is still running.
 }
 
-func (d *DB) CreateSession(harness, status string) (int64, error) {
-	res, err := d.conn.Exec(
-		`INSERT INTO sessions (harness, status, started_at) VALUES (?, ?, ?)`,
-		harness, status, time.Now(),
-	)
+// CreateSession inserts a new session record. Pass ticketID=0 when not linked to a ticket.
+func (d *DB) CreateSession(ticketID int64, harness, status string) (int64, error) {
+	var res sql.Result
+	var err error
+	if ticketID == 0 {
+		res, err = d.conn.Exec(
+			`INSERT INTO sessions (harness, status, started_at) VALUES (?, ?, ?)`,
+			harness, status, time.Now(),
+		)
+	} else {
+		res, err = d.conn.Exec(
+			`INSERT INTO sessions (ticket_id, harness, status, started_at) VALUES (?, ?, ?, ?)`,
+			ticketID, harness, status, time.Now(),
+		)
+	}
 	if err != nil {
 		return 0, err
 	}
