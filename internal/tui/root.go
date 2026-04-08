@@ -1,10 +1,12 @@
+// Package tui is the BubbleTea root model implementing a push/pop navigation stack.
 package tui
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// Root holds a stack of models. The top of the stack is the active view.
+// Root holds a stack of models; the top is the active view.
+// Push/pop are driven by pushMsg/popMsg returned from views via push and pop.
 type Root struct {
 	stack []tea.Model
 }
@@ -53,10 +55,12 @@ type pushMsg struct{ model tea.Model }
 // popMsg pops the current view.
 type popMsg struct{}
 
+// push returns a tea.Cmd that navigates to m by pushing it onto the stack.
 func push(m tea.Model) tea.Cmd {
 	return func() tea.Msg { return pushMsg{model: m} }
 }
 
+// pop returns a tea.Cmd that navigates back by popping the current view.
 func pop() tea.Cmd {
 	return func() tea.Msg { return popMsg{} }
 }

@@ -116,3 +116,32 @@ func TestDB(t *testing.T) {
 
 	_ = os.Getenv("HOME")
 }
+
+func TestGetTicketByID(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+
+	d, err := Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+
+	id, err := d.CreateTicket("hello", "world", "repo1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ticket, err := d.GetTicketByID(id)
+	if err != nil {
+		t.Fatalf("expected ticket, got error: %v", err)
+	}
+	if ticket.ID != id || ticket.Title != "hello" {
+		t.Fatalf("unexpected ticket: %+v", ticket)
+	}
+
+	_, err = d.GetTicketByID(99999)
+	if err == nil {
+		t.Fatal("expected error for missing ticket, got nil")
+	}
+}

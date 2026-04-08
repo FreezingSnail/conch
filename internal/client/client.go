@@ -1,3 +1,5 @@
+// Package client is a thin client for the conchd Unix-socket API.
+// It opens a new connection per call.
 package client
 
 import (
@@ -15,6 +17,7 @@ func sockAddr() string {
 	return filepath.Join(os.Getenv("HOME"), ".conch", "daemon.sock")
 }
 
+// Request maps 1:1 to daemon actions. Unused fields are omitted from JSON via omitempty.
 type Request struct {
 	Action      string `json:"action"`
 	Prompt      string `json:"prompt,omitempty"`
@@ -30,6 +33,7 @@ type Request struct {
 	Description string `json:"description,omitempty"`
 }
 
+// Response is the daemon's reply. OK is false and Error is set on any failure.
 type Response struct {
 	OK       bool         `json:"ok"`
 	Error    string       `json:"error,omitempty"`
@@ -42,6 +46,8 @@ type Response struct {
 	Lines    []string     `json:"lines,omitempty"`
 }
 
+// Send dials the socket, writes one JSON line, and reads one JSON line back.
+// It returns an error only on transport failure; daemon-level errors are in Response.Error.
 func Send(req Request) (Response, error) {
 	conn, err := net.Dial("unix", sockAddr())
 	if err != nil {
@@ -59,6 +65,7 @@ func Send(req Request) (Response, error) {
 	return resp, nil
 }
 
+// Ping reports whether the daemon is reachable. Safe to call when the daemon is not running.
 func Ping() bool {
 	resp, err := Send(Request{Action: "ping"})
 	return err == nil && resp.OK

@@ -1,3 +1,5 @@
+// Package db is the SQLite-backed store for tickets, tasks, sessions, and session logs.
+// All data lives at ~/.conch/conch.db.
 package db
 
 import (
@@ -9,10 +11,13 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// DB wraps a sql.DB connection to conch.db. Obtain via Open.
 type DB struct {
 	conn *sql.DB
 }
 
+// Open creates ~/.conch if missing, opens the SQLite database, and runs migrations.
+// Safe to call on an existing database.
 func Open() (*DB, error) {
 	dir := filepath.Join(os.Getenv("HOME"), ".conch")
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -26,6 +31,8 @@ func Open() (*DB, error) {
 	return d, d.migrate()
 }
 
+// migrate creates the schema on first run. Additive column migrations silently
+// ignore errors because the column may already exist in an older database.
 func (d *DB) migrate() error {
 	_, err := d.conn.Exec(`
 		CREATE TABLE IF NOT EXISTS tickets (
@@ -86,14 +93,15 @@ func (d *DB) Close() error { return d.conn.Close() }
 
 // Tickets
 
+// Ticket represents a unit of work, optionally linked to a git repo and worktree.
 type Ticket struct {
 	ID           int64
 	Title        string
 	Description  string
 	Status       string
-	Dependencies string
+	Dependencies string // Legacy field; unused.
 	Repo         string
-	WorktreePath string
+	WorktreePath string // Empty when no worktree is active for this ticket.
 	CreatedAt    time.Time
 }
 
@@ -130,8 +138,18 @@ func (d *DB) ListTickets() ([]Ticket, error) {
 	return tickets, nil
 }
 
+// GetTicketByID returns the ticket with the given ID. Returns sql.ErrNoRows if not found.
+func (d *DB) GetTicketByID(id int64) (Ticket, error) {
+	var t Ticket
+	err := d.conn.QueryRow(
+		`SELECT id, title, description, status, COALESCE(dependencies,''), COALESCE(repo,''), COALESCE(worktree_path,''), created_at FROM tickets WHERE id=?`, id,
+	).Scan(&t.ID, &t.Title, &t.Description, &t.Status, &t.Dependencies, &t.Repo, &t.WorktreePath, &t.CreatedAt)
+	return t, err
+}
+
 // Tasks
 
+// Task is a discrete step within a Ticket.
 type Task struct {
 	ID        int64     `json:"id"`
 	TicketID  int64     `json:"ticket_id"`
@@ -142,6 +160,7 @@ type Task struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// CreateTask creates a task with an empty body. Delegates to CreateTaskWithBody.
 func (d *DB) CreateTask(ticketID int64, title string) (int64, error) {
 	return d.CreateTaskWithBody(ticketID, title, "")
 }
@@ -158,6 +177,7 @@ func (d *DB) CreateTaskWithBody(ticketID int64, title, body string) (int64, erro
 	return res.LastInsertId()
 }
 
+// GetTask returns the task with the given ID. Returns sql.ErrNoRows if not found.
 func (d *DB) GetTask(id int64) (Task, error) {
 	var t Task
 	err := d.conn.QueryRow(
@@ -193,7 +213,7 @@ func (d *DB) RemoveDependency(blockerID, blockedID int64) error {
 	return err
 }
 
-// ListBlockedBy returns tasks that must complete before taskID can start.
+// ListBlockedBy returns the tasks that must complete before taskID can start.
 func (d *DB) ListBlockedBy(taskID int64) ([]Task, error) {
 	rows, err := d.conn.Query(`
 		SELECT t.id, t.ticket_id, t.title, t.body, t.status, t.created_at, t.updated_at
@@ -206,7 +226,7 @@ func (d *DB) ListBlockedBy(taskID int64) ([]Task, error) {
 	return scanTasks(rows)
 }
 
-// ListBlocks returns tasks that taskID is blocking.
+// ListBlocks returns the tasks that taskID is currently blocking.
 func (d *DB) ListBlocks(taskID int64) ([]Task, error) {
 	rows, err := d.conn.Query(`
 		SELECT t.id, t.ticket_id, t.title, t.body, t.status, t.created_at, t.updated_at
@@ -233,6 +253,7 @@ func scanTasks(rows *sql.Rows) ([]Task, error) {
 
 // Sessions
 
+// Session records a harness invocation, either interactive or background.
 type Session struct {
 	ID        int64
 	TicketID  int64
@@ -240,7 +261,7 @@ type Session struct {
 	Harness   string
 	Status    string
 	StartedAt time.Time
-	EndedAt   *time.Time
+	EndedAt   *time.Time // Nil while the session is still running.
 }
 
 func (d *DB) CreateSession(harness, status string) (int64, error) {

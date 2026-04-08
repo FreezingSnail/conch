@@ -1,3 +1,4 @@
+// Package config loads and saves ~/.conch/config.json.
 package config
 
 import (
@@ -14,6 +15,7 @@ func path() string {
 	return filepath.Join(os.Getenv("HOME"), ".conch", "config.json")
 }
 
+// Load reads the config file. Returns an empty Config (not an error) when the file does not exist.
 func Load() (Config, error) {
 	data, err := os.ReadFile(path())
 	if os.IsNotExist(err) {
@@ -38,7 +40,8 @@ func Save(c Config) error {
 	return os.WriteFile(p, data, 0644)
 }
 
-// FindRepos walks each work dir one level deep and returns paths that contain a .git directory.
+// FindRepos walks each work dir exactly one level deep. A directory is considered
+// a repo if it contains a .git entry.
 func FindRepos(workDirs []string) ([]string, error) {
 	var repos []string
 	for _, dir := range workDirs {

@@ -59,7 +59,7 @@ func (v worktreesView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "y", "Y":
 				v.confirming = false
-				return v, v.runAction(v.confirmAction)
+				return v, v.sendAction(v.confirmAction)
 			default:
 				v.confirming = false
 				v.confirmMsg = ""
@@ -152,10 +152,6 @@ func (v worktreesView) sendAction(action string) tea.Cmd {
 		}
 		return worktreeActionMsg{ok: action + " ok", reload: reload}
 	}
-}
-
-func (v worktreesView) runAction(action string) tea.Cmd {
-	return v.sendAction(action)
 }
 
 func (v worktreesView) sendGlobal(action string) tea.Cmd {

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -62,7 +63,7 @@ func (p planView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc", "q":
 			return p, pop()
 		case "enter":
-			return p, tea.ExecProcess(kiroCmd(), func(err error) tea.Msg {
+			return p, tea.ExecProcess(exec.Command("kiro"), func(err error) tea.Msg {
 				return planDoneMsg{err: err}
 			})
 		}

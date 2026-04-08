@@ -1,3 +1,4 @@
+// Package git provides thin wrappers around the git CLI for worktree management.
 package git
 
 import (
@@ -14,7 +15,8 @@ func run(dir string, args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), err
 }
 
-// DefaultBranch returns "main" if it exists, otherwise "master".
+// DefaultBranch checks for a refs/heads/main file and returns "main" if present,
+// otherwise "master". Does not query the remote.
 func DefaultBranch(repoPath string) string {
 	if _, err := os.Stat(filepath.Join(repoPath, ".git", "refs", "heads", "main")); err == nil {
 		return "main"
@@ -22,7 +24,7 @@ func DefaultBranch(repoPath string) string {
 	return "master"
 }
 
-// WorktreeAdd creates a new worktree at worktreePath on a new branch named branch.
+// WorktreeAdd creates a new branch named branch and checks it out at worktreePath.
 func WorktreeAdd(repoPath, worktreePath, branch string) error {
 	_, err := run(repoPath, "worktree", "add", "-b", branch, worktreePath, DefaultBranch(repoPath))
 	return err
@@ -49,7 +51,7 @@ func WorktreeList(repoPath string) ([]string, error) {
 	return paths, nil
 }
 
-// FetchMain fetches the default branch from origin.
+// FetchMain fetches only the default branch from origin, not all refs.
 func FetchMain(repoPath string) error {
 	branch := DefaultBranch(repoPath)
 	_, err := run(repoPath, "fetch", "origin", branch)
@@ -57,6 +59,7 @@ func FetchMain(repoPath string) error {
 }
 
 // RebaseOntoMain rebases the worktree's current branch onto origin/<default>.
+// worktreePath (not repoPath) is used as the working directory.
 func RebaseOntoMain(repoPath, worktreePath string) error {
 	branch := DefaultBranch(repoPath)
 	_, err := run(worktreePath, "rebase", "origin/"+branch)
