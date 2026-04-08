@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+
+	"github.com/FreezingSnail/conch/internal/db"
 )
 
 var uuidRe = regexp.MustCompile(`[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
@@ -55,4 +57,15 @@ func BuildPrompt(ticketNumber string, ticketID int64, desc, context string) stri
 		s += "\ncontext:" + context
 	}
 	return s
+}
+
+// BuildExecutorPrompt builds the initial prompt for a headless executor session.
+// It inlines the task list so the agent doesn't need a tool call to start.
+func BuildExecutorPrompt(ticketNumber string, ticketID int64, tasks []db.Task) string {
+	lines := make([]string, len(tasks))
+	for i, t := range tasks {
+		lines[i] = fmt.Sprintf("  [%s] id:%d %s", t.Status, t.ID, t.Title)
+	}
+	return fmt.Sprintf("[CONCH EXECUTOR] ticket:%s id:%d\ntasks:\n%s",
+		ticketNumber, ticketID, strings.Join(lines, "\n"))
 }

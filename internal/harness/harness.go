@@ -21,6 +21,8 @@ type Harness interface {
 	InteractiveWithAgent(agent, prompt, dir string) *exec.Cmd
 	// Background returns a command that runs headlessly with the given prompt.
 	Background(prompt string) *exec.Cmd
+	// BackgroundWithAgent returns a headless command using the named agent, running in dir.
+	BackgroundWithAgent(agent, prompt, dir string) *exec.Cmd
 }
 
 // Kiro implements Harness for kiro-cli.
@@ -40,6 +42,12 @@ func (k Kiro) InteractiveWithAgent(agent, prompt, dir string) *exec.Cmd {
 
 func (k Kiro) Background(prompt string) *exec.Cmd {
 	return exec.Command("kiro-cli", "chat", "--no-interactive", "--trust-all-tools", prompt)
+}
+
+func (k Kiro) BackgroundWithAgent(agent, prompt, dir string) *exec.Cmd {
+	cmd := exec.Command("kiro-cli", "chat", "--no-interactive", "--trust-all-tools", "--agent", agent, prompt)
+	cmd.Dir = dir
+	return cmd
 }
 
 // SpawnTmuxPane opens a new tmux pane running kiro-cli, then calls back to the

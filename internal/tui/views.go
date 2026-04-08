@@ -14,6 +14,10 @@ func newView(name string) tea.Model {
 	switch name {
 	case "Plan":
 		return newPlanningWizard()
+	case "Mantle":
+		return newMantleView()
+	case "Burrow":
+		return newBurrowView()
 	case "Execute":
 		return newExecuteView()
 	case "Tickets":

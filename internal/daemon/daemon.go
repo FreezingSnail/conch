@@ -389,6 +389,39 @@ func dispatch(req client.Request, database *db.DB) client.Response {
 		}
 		return client.Response{OK: true}
 
+	case "exec_start":
+		if req.TicketID == 0 {
+			return client.Response{Error: "ticket_id required"}
+		}
+		ticket, err := database.GetTicketByID(req.TicketID)
+		if err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		if ticket.WorktreePath == "" {
+			return client.Response{Error: "no worktree for ticket"}
+		}
+		// Block duplicate launches.
+		sessions, err := database.ListSessions()
+		if err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		for _, s := range sessions {
+			if s.TicketID == req.TicketID && s.Status == "running" {
+				return client.Response{Error: "executor already running for this ticket"}
+			}
+		}
+		tasks, err := database.ListTasksByTicket(req.TicketID)
+		if err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		prompt := kiro.BuildExecutorPrompt(ticket.TicketNumber, ticket.ID, tasks)
+		sessionID, err := database.CreateSession(req.TicketID, "kiro-executor", "running")
+		if err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		go runExecutor(sessionID, prompt, ticket.WorktreePath, database)
+		return client.Response{OK: true, ID: sessionID}
+
 	default:
 		return client.Response{Error: "unknown action"}
 	}
@@ -427,4 +460,21 @@ func writeResp(w io.Writer, r client.Response) {
 	b, _ := json.Marshal(r)
 	b = append(b, '\n')
 	w.Write(b)
+}
+
+// runExecutor spawns a headless kiro executor in the ticket's worktree and
+// updates the session status when the process exits.
+func runExecutor(sessionID int64, prompt, worktreePath string, database *db.DB) {
+	cmd := harness.Kiro{}.BackgroundWithAgent("executor", prompt, worktreePath)
+	if err := cmd.Start(); err != nil {
+		database.UpdateSessionStatus(sessionID, "error")
+		database.AppendSessionLog(sessionID, "error", err.Error())
+		return
+	}
+	if err := cmd.Wait(); err != nil {
+		database.UpdateSessionStatus(sessionID, "error")
+		database.AppendSessionLog(sessionID, "exit_error", err.Error())
+		return
+	}
+	database.UpdateSessionStatus(sessionID, "completed")
 }
