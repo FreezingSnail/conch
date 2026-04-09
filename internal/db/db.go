@@ -163,6 +163,22 @@ func (d *DB) ListWorktreesByTicket(ticketID int64) ([]Worktree, error) {
 	return wts, nil
 }
 
+// DeleteTicket hard-deletes a ticket and all associated worktrees rows.
+func (d *DB) DeleteTicket(id int64) error {
+	_, err := d.conn.Exec(`DELETE FROM worktrees WHERE ticket_id=?`, id)
+	if err != nil {
+		return err
+	}
+	_, err = d.conn.Exec(`DELETE FROM tickets WHERE id=?`, id)
+	return err
+}
+
+// DeleteWorktreeByPath removes the worktrees row with the given path.
+func (d *DB) DeleteWorktreeByPath(path string) error {
+	_, err := d.conn.Exec(`DELETE FROM worktrees WHERE worktree_path=?`, path)
+	return err
+}
+
 // SetSessionKiroID stores the kiro-cli session UUID on an existing session row.
 func (d *DB) SetSessionKiroID(sessionID int64, kiroSessionID string) error {
 	_, err := d.conn.Exec(`UPDATE sessions SET kiro_session_id=? WHERE id=?`, kiroSessionID, sessionID)

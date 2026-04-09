@@ -231,6 +231,22 @@ func dispatch(req client.Request, database *db.DB) client.Response {
 		}
 		return client.Response{OK: true}
 
+	case "delete_ticket":
+		if req.TicketID == 0 {
+			return client.Response{Error: "ticket_id required"}
+		}
+		t, err := database.GetTicketByID(req.TicketID)
+		if err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		if t.WorktreePath != "" {
+			git.WorktreeRemove(t.Repo, t.WorktreePath)
+		}
+		if err := database.DeleteTicket(req.TicketID); err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		return client.Response{OK: true}
+
 	case "remove_worktree":
 		if req.TicketID == 0 {
 			return client.Response{Error: "ticket_id required"}
@@ -246,6 +262,7 @@ func dispatch(req client.Request, database *db.DB) client.Response {
 			return client.Response{Error: err.Error()}
 		}
 		database.SetTicketRepo(req.TicketID, ticket.Repo, "")
+		database.DeleteWorktreeByPath(ticket.WorktreePath)
 		return client.Response{OK: true}
 
 	case "list_worktrees":
@@ -305,6 +322,7 @@ func dispatch(req client.Request, database *db.DB) client.Response {
 		}
 		git.WorktreeRemove(t.Repo, t.WorktreePath)
 		database.SetTicketRepo(req.TicketID, t.Repo, "")
+		database.DeleteWorktreeByPath(t.WorktreePath)
 		return client.Response{OK: true}
 
 	case "open_pr":

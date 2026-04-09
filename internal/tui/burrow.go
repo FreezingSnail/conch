@@ -27,6 +27,8 @@ type burrowView struct {
 	tab        burrowTab
 	status     string
 	loaded     bool
+	confirming bool
+	confirmID  int64
 }
 
 type burrowLoadedMsg struct {
@@ -112,6 +114,26 @@ func (v burrowView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.KeyMsg:
+		if v.confirming {
+			switch msg.String() {
+			case "y", "Y":
+				v.confirming = false
+				id := v.confirmID
+				return v, func() tea.Msg {
+					resp, err := client.Send(client.Request{Action: "delete_ticket", TicketID: id})
+					if err != nil {
+						return burrowStartedMsg{err: err.Error()}
+					}
+					if !resp.OK {
+						return burrowStartedMsg{err: resp.Error}
+					}
+					return loadBurrow()
+				}
+			default:
+				v.confirming = false
+			}
+			return v, nil
+		}
 		switch msg.String() {
 		case "esc", "q":
 			return v, pop()
@@ -138,6 +160,12 @@ func (v burrowView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "enter":
 			return v, v.handleEnter()
+		case "D":
+			visible := v.tabTickets()
+			if len(visible) > 0 && v.cursor < len(visible) {
+				v.confirming = true
+				v.confirmID = visible[v.cursor].ID
+			}
 		}
 	}
 	return v, nil
@@ -200,6 +228,10 @@ func (v burrowView) View() string {
 	}
 	s += "\n\n"
 
+	if v.confirming {
+		return s + fmt.Sprintf("  hard delete ticket #%d? [y/n]\n", v.confirmID)
+	}
+
 	if !v.loaded {
 		return s + "  loading...\n"
 	}
@@ -241,6 +273,6 @@ func (v burrowView) View() string {
 	if v.status != "" {
 		s += "\n  " + v.status + "\n"
 	}
-	s += "\n  tab switch tabs  ↑/↓ navigate  enter start  r refresh  esc back\n"
+	s += "\n  tab switch tabs  ↑/↓ navigate  enter start  D delete  r refresh  esc back\n"
 	return s
 }
