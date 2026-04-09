@@ -67,6 +67,25 @@ func (k Kiro) SpawnTmuxPane(agent, prompt, dir string, sessionID int64, beforeID
 	return exec.Command("tmux", "split-window", "-h", shellCmd).Run()
 }
 
+// SpawnTmuxWindow opens a new named tmux window running kiro-cli. On exit it calls
+// conch notify, switches focus back to the originating window, then closes itself.
+func (k Kiro) SpawnTmuxWindow(windowName, agent, prompt, dir string, sessionID int64, beforeIDs string) error {
+	prevID, err := exec.Command("tmux", "display-message", "-p", "#{window_id}").Output()
+	if err != nil {
+		return err
+	}
+	prev := strings.TrimSpace(string(prevID))
+	var kiroCmd string
+	if agent != "" {
+		kiroCmd = fmt.Sprintf("kiro-cli chat --agent %s --trust-all-tools %q", agent, prompt)
+	} else {
+		kiroCmd = "kiro-cli chat"
+	}
+	notify := fmt.Sprintf("conch notify --session-id %d --worktree %q --before-ids %q", sessionID, dir, beforeIDs)
+	shellCmd := fmt.Sprintf("SELF=$(tmux display-message -p '#{window_id}'); cd %q && %s; %s; tmux select-window -t %s; tmux kill-window -t $SELF", dir, kiroCmd, notify, prev)
+	return exec.Command("tmux", "new-window", "-n", windowName, shellCmd).Run()
+}
+
 // SpawnTmuxPaneResume opens a new tmux pane with the kiro-cli session picker in dir.
 func (k Kiro) SpawnTmuxPaneResume(dir string) error {
 	shellCmd := fmt.Sprintf("cd %q && kiro-cli chat", dir)
