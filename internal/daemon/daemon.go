@@ -17,7 +17,6 @@ import (
 	"github.com/FreezingSnail/conch/internal/config"
 	"github.com/FreezingSnail/conch/internal/db"
 	"github.com/FreezingSnail/conch/internal/git"
-	"github.com/FreezingSnail/conch/internal/harness"
 	"github.com/FreezingSnail/conch/internal/kiro"
 )
 
@@ -460,8 +459,7 @@ func dispatch(req client.Request, database *db.DB) client.Response {
 // runBackground streams stdout line-by-line into session_logs and updates the
 // session status to "completed" or "error" when the process exits.
 func runBackground(sessionID int64, prompt string, database *db.DB) {
-	h := harness.Get("kiro")
-	cmd := h.Background(prompt)
+	cmd := kiro.Kiro{}.Background(prompt)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		database.UpdateSessionStatus(sessionID, "error")
@@ -495,7 +493,7 @@ func writeResp(w io.Writer, r client.Response) {
 // runExecutor spawns a headless kiro executor in the ticket's worktree and
 // updates the session status when the process exits.
 func runExecutor(sessionID int64, prompt, worktreePath string, database *db.DB) {
-	cmd := harness.Kiro{}.BackgroundWithAgent("executor", prompt, worktreePath)
+	cmd := kiro.Kiro{}.BackgroundWithAgent("executor", prompt, worktreePath)
 	if err := cmd.Start(); err != nil {
 		database.UpdateSessionStatus(sessionID, "error")
 		database.AppendSessionLog(sessionID, "error", err.Error())

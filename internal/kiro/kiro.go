@@ -1,4 +1,4 @@
-// Package kiro wraps kiro-cli invocations used by conch.
+// Package kiro implements the harness.Harness interface for kiro-cli.
 package kiro
 
 import (
@@ -8,13 +8,50 @@ import (
 	"strings"
 
 	"github.com/FreezingSnail/conch/internal/db"
+	"github.com/FreezingSnail/conch/internal/harness"
 )
+
+// compile-time interface check
+var _ harness.Harness = Kiro{}
 
 var uuidRe = regexp.MustCompile(`[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
 
+// Kiro implements harness.Harness for kiro-cli.
+type Kiro struct{}
+
+func (k Kiro) Name() string { return "kiro" }
+
+func (k Kiro) Interactive() *exec.Cmd {
+	return exec.Command("kiro-cli", "chat")
+}
+
+func (k Kiro) InteractiveWithAgent(agent, prompt, dir string) *exec.Cmd {
+	cmd := exec.Command("kiro-cli", "chat", "--agent", agent, "--trust-all-tools", prompt)
+	cmd.Dir = dir
+	return cmd
+}
+
+func (k Kiro) Background(prompt string) *exec.Cmd {
+	return exec.Command("kiro-cli", "chat", "--no-interactive", "--trust-all-tools", prompt)
+}
+
+func (k Kiro) BackgroundWithAgent(agent, prompt, dir string) *exec.Cmd {
+	cmd := exec.Command("kiro-cli", "chat", "--no-interactive", "--trust-all-tools", "--agent", agent, prompt)
+	cmd.Dir = dir
+	return cmd
+}
+
+// CLICommand returns the shell command string for use in tmux invocations.
+// If agent is empty, returns the bare interactive command.
+func (k Kiro) CLICommand(agent, prompt string) string {
+	if agent == "" {
+		return "kiro-cli chat"
+	}
+	return fmt.Sprintf("kiro-cli chat --agent %s --trust-all-tools %q", agent, prompt)
+}
+
 // ListSessionIDs runs "kiro-cli chat --list-sessions" in dir and returns all
-// session UUIDs found in the output. Returns nil on error so callers can always
-// diff safely.
+// session UUIDs found in the output.
 func ListSessionIDs(dir string) []string {
 	cmd := exec.Command("kiro-cli", "chat", "--list-sessions")
 	cmd.Dir = dir
@@ -35,7 +72,6 @@ func ListSessionIDs(dir string) []string {
 }
 
 // NewSessionID returns the first UUID present in after but not in before.
-// Returns "" if no new session is found.
 func NewSessionID(before, after []string) string {
 	old := make(map[string]bool, len(before))
 	for _, id := range before {
@@ -49,8 +85,7 @@ func NewSessionID(before, after []string) string {
 	return ""
 }
 
-// BuildPrompt formats the planning context string passed to kiro-cli as the
-// initial query.
+// BuildPrompt formats the planning context string passed to kiro-cli.
 func BuildPrompt(ticketNumber string, ticketID int64, desc, context string) string {
 	s := fmt.Sprintf("[CONCH PLANNING] ticket:%s id:%d\ndesc:%s", ticketNumber, ticketID, desc)
 	if strings.TrimSpace(context) != "" {
@@ -60,7 +95,6 @@ func BuildPrompt(ticketNumber string, ticketID int64, desc, context string) stri
 }
 
 // BuildExecutorPrompt builds the initial prompt for a headless executor session.
-// It inlines the task list so the agent doesn't need a tool call to start.
 func BuildExecutorPrompt(ticketNumber string, ticketID int64, tasks []db.Task) string {
 	lines := make([]string, len(tasks))
 	for i, t := range tasks {

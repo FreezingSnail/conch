@@ -6,6 +6,7 @@ import (
 	"github.com/FreezingSnail/conch/internal/client"
 	"github.com/FreezingSnail/conch/internal/db"
 	"github.com/FreezingSnail/conch/internal/harness"
+	"github.com/FreezingSnail/conch/internal/kiro"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -86,15 +87,13 @@ func (v planningSessionsView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return v, nil
 			}
 			if harness.InTmux() {
-				k := harness.Kiro{}
-				if err := k.SpawnTmuxPaneResume(t.WorktreePath); err != nil {
+				if err := harness.SpawnTmuxPaneResume(kiro.Kiro{}, t.WorktreePath); err != nil {
 					v.status = "tmux error: " + err.Error()
 				}
 				return v, nil
 			}
 			// Fallback: take over terminal with kiro session picker.
-			k := harness.Kiro{}
-			cmd := k.Interactive()
+			cmd := kiro.Kiro{}.Interactive()
 			cmd.Dir = t.WorktreePath
 			return v, tea.ExecProcess(cmd, func(err error) tea.Msg { return nil })
 		}

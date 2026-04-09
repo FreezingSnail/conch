@@ -112,7 +112,7 @@ func (w planningWizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		w.beforeIDs = kiro.ListSessionIDs(w.worktree)
 		prompt := kiro.BuildPrompt(w.ticketNum, w.ticketID, w.desc, w.context)
 		if harness.InTmux() {
-			err := harness.Kiro{}.SpawnTmuxWindow(w.ticketNum+": "+w.desc, "planning", prompt, w.worktree, w.sessionID, harness.JoinIDs(w.beforeIDs))
+			err := harness.SpawnTmuxWindow(kiro.Kiro{}, w.ticketNum+": "+w.desc, "planning", prompt, w.worktree, w.sessionID, harness.JoinIDs(w.beforeIDs))
 			if err != nil {
 				w.status = "tmux error: " + err.Error()
 				w.step = stepRepoPicker
@@ -120,7 +120,7 @@ func (w planningWizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return w, pop()
 		}
-		cmd := harness.Kiro{}.InteractiveWithAgent("planning", prompt, w.worktree)
+		cmd := kiro.Kiro{}.InteractiveWithAgent("planning", prompt, w.worktree)
 		return w, tea.ExecProcess(cmd, func(err error) tea.Msg {
 			return kiroExitMsg{err: err}
 		})
