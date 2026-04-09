@@ -25,9 +25,34 @@ func DefaultBranch(repoPath string) string {
 }
 
 // WorktreeAdd creates a new branch named branch and checks it out at worktreePath.
+// It is idempotent: if the worktree is already registered it returns nil; if the
+// path exists on disk but is unregistered it is removed before recreating; if the
+// branch already exists the -b flag is omitted.
 func WorktreeAdd(repoPath, worktreePath, branch string) error {
-	_, err := run(repoPath, "worktree", "add", "-b", branch, worktreePath, DefaultBranch(repoPath))
-	return err
+	// Already registered — nothing to do.
+	paths, err := WorktreeList(repoPath)
+	if err == nil {
+		realTarget, _ := filepath.EvalSymlinks(worktreePath)
+		for _, p := range paths {
+			realP, _ := filepath.EvalSymlinks(p)
+			if realP == realTarget || p == worktreePath {
+				return nil
+			}
+		}
+	}
+	// Path exists on disk but not registered — remove it so git is happy.
+	if _, err := os.Stat(worktreePath); err == nil {
+		if err := os.RemoveAll(worktreePath); err != nil {
+			return err
+		}
+	}
+	base := DefaultBranch(repoPath)
+	if _, err := run(repoPath, "worktree", "add", "-b", branch, worktreePath, base); err != nil {
+		// Branch already exists; check out without creating it.
+		_, err = run(repoPath, "worktree", "add", worktreePath, branch)
+		return err
+	}
+	return nil
 }
 
 // WorktreeRemove removes the worktree at worktreePath.

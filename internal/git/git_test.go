@@ -75,3 +75,17 @@ func TestWorktreeAddRemoveList(t *testing.T) {
 		t.Fatal("worktree dir should be removed")
 	}
 }
+
+func TestWorktreeAddIdempotent(t *testing.T) {
+	requireGit(t)
+	repo := initRepo(t)
+	wtPath := filepath.Join(t.TempDir(), "wt-idem")
+
+	if err := WorktreeAdd(repo, wtPath, "ticket-idem"); err != nil {
+		t.Fatal(err)
+	}
+	// Second call must not error.
+	if err := WorktreeAdd(repo, wtPath, "ticket-idem"); err != nil {
+		t.Fatalf("second WorktreeAdd: %v", err)
+	}
+}

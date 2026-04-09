@@ -344,6 +344,9 @@ func dispatch(req client.Request, database *db.DB) client.Response {
 			if err := database.CreateWorktree(ticketID, repo, wtPath); err != nil {
 				return client.Response{Error: err.Error()}
 			}
+			if err := database.SetTicketRepo(ticketID, repo, wtPath); err != nil {
+				return client.Response{Error: err.Error()}
+			}
 		}
 		sessionID, err := database.CreateSession(ticketID, "kiro", "running")
 		if err != nil {
