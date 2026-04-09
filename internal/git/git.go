@@ -96,3 +96,17 @@ func Push(worktreePath, branch string) error {
 	_, err := run(worktreePath, "push", "--set-upstream", "origin", branch)
 	return err
 }
+
+// MergeIntoMain checks out the default branch in repoPath and merges branch into it.
+// Returns the combined git output and any error. On a merge conflict the repo is
+// left in the conflicted state and a non-nil error is returned alongside the output.
+func MergeIntoMain(repoPath, branch string) (string, error) {
+	main := DefaultBranch(repoPath)
+	if _, err := run(repoPath, "checkout", main); err != nil {
+		return "", err
+	}
+	cmd := exec.Command("git", "merge", branch)
+	cmd.Dir = repoPath
+	out, err := cmd.CombinedOutput()
+	return strings.TrimSpace(string(out)), err
+}

@@ -98,6 +98,10 @@ func (v worktreesView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			v.confirming = true
 			v.confirmMsg = "open PR for this worktree? [y/n]"
 			v.confirmAction = "open_pr"
+		case "m":
+			v.confirming = true
+			v.confirmMsg = "merge this worktree into main? [y/n]"
+			v.confirmAction = "merge_worktree"
 		case "x":
 			v.confirming = true
 			v.confirmMsg = "delete this worktree? [y/n]"
@@ -146,7 +150,7 @@ func (v worktreesView) sendAction(action string) tea.Cmd {
 		if !resp.OK {
 			return worktreeActionMsg{err: resp.Error}
 		}
-		reload := action == "remove_worktree"
+		reload := action == "remove_worktree" || action == "merge_worktree"
 		if len(resp.Lines) > 0 {
 			return worktreeActionMsg{lines: strings.Join(resp.Lines, "\n"), reload: reload}
 		}
@@ -204,6 +208,6 @@ func (v worktreesView) View() string {
 	if v.status != "" {
 		s += "\n  " + v.status + "\n"
 	}
-	s += "\n  s status  d diff  p push  R rebase  P open-pr  x delete  S sync-all  r refresh  esc back\n"
+	s += "\n  s status  d diff  p push  R rebase  P open-pr  m merge  x delete  S sync-all  r refresh  esc back\n"
 	return s
 }

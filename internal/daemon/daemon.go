@@ -58,6 +58,15 @@ func handle(conn net.Conn, database *db.DB) {
 	}
 }
 
+// ticketBranch returns the git branch name for a ticket. plan_setup uses
+// TicketNumber as the branch; older paths use the numeric ID.
+func ticketBranch(t db.Ticket) string {
+	if t.TicketNumber != "" {
+		return t.TicketNumber
+	}
+	return fmt.Sprintf("%d", t.ID)
+}
+
 // dispatch is the central routing function. Unknown actions return an error
 // response rather than panicking.
 func dispatch(req client.Request, database *db.DB) client.Response {
@@ -275,10 +284,28 @@ func dispatch(req client.Request, database *db.DB) client.Response {
 		if err != nil {
 			return client.Response{Error: err.Error()}
 		}
-		branch := fmt.Sprintf("%d", t.ID)
+		branch := ticketBranch(t)
 		if err := git.Push(t.WorktreePath, branch); err != nil {
 			return client.Response{Error: err.Error()}
 		}
+		return client.Response{OK: true}
+
+	case "merge_worktree":
+		if req.TicketID == 0 {
+			return client.Response{Error: "ticket_id required"}
+		}
+		t, err := database.GetTicketByID(req.TicketID)
+		if err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		branch := ticketBranch(t)
+		out, mergeErr := git.MergeIntoMain(t.Repo, branch)
+		if mergeErr != nil {
+			// Leave repo in conflicted state; surface output to the user.
+			return client.Response{OK: true, Lines: []string{out}}
+		}
+		git.WorktreeRemove(t.Repo, t.WorktreePath)
+		database.SetTicketRepo(req.TicketID, t.Repo, "")
 		return client.Response{OK: true}
 
 	case "open_pr":
@@ -289,7 +316,7 @@ func dispatch(req client.Request, database *db.DB) client.Response {
 		if err != nil {
 			return client.Response{Error: err.Error()}
 		}
-		branch := fmt.Sprintf("%d", t.ID)
+		branch := ticketBranch(t)
 		base := git.DefaultBranch(t.Repo)
 		cmd := exec.Command("gh", "pr", "create", "--head", branch, "--base", base, "--fill")
 		cmd.Dir = t.WorktreePath
