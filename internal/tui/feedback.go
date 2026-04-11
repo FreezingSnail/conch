@@ -138,12 +138,11 @@ func (v feedbackView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				v.cursor++
 			}
 		case "enter":
-			// diffView will be wired in a later task; push a stub for now.
 			visible := v.tabTickets()
 			if len(visible) == 0 || v.cursor >= len(visible) {
 				return v, nil
 			}
-			return v, push(stubView{name: "Diff"})
+			return v, push(newDiffView(visible[v.cursor]))
 		case "b":
 			return v, push(newBurrowView())
 		case "r":
