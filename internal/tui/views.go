@@ -46,8 +46,15 @@ func (s stubView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	return s, nil
 }
+
+// Title implements Titler.
+func (s stubView) Title() string { return s.name }
+
+// HelpLine implements Helper.
+func (s stubView) HelpLine() string { return "esc back" }
+
 func (s stubView) View() string {
-	return fmt.Sprintf("  %s\n\n  (stub — press esc to go back)\n", s.name)
+	return StyleTitle.Render("  "+s.name) + "\n\n  (stub — press esc to go back)\n"
 }
 
 // --- execute view ---
@@ -56,7 +63,7 @@ type executeView struct {
 	input   string
 	status  string
 	polling bool
-	width   int
+	w, h    int
 }
 
 type pollMsg struct{}
@@ -65,10 +72,16 @@ func newExecuteView() executeView { return executeView{} }
 
 func (e executeView) Init() tea.Cmd { return nil }
 
+// Title implements Titler.
+func (e executeView) Title() string { return "Execute" }
+
+// HelpLine implements Helper.
+func (e executeView) HelpLine() string { return "enter to submit  esc to go back" }
+
 func (e executeView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		e.width = msg.Width
+		e.w, e.h = msg.Width, msg.Height
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "esc":
@@ -113,12 +126,10 @@ func (e executeView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (e executeView) View() string {
-	s := "  Execute\n\n"
-	s += wrapInput("Prompt: ", e.input, e.width) + "\n\n"
+	s := wrapInput("Prompt: ", e.input, e.w) + "\n"
 	if e.status != "" {
-		s += fmt.Sprintf("  Status: %s\n\n", e.status)
+		s += "\n" + statusLine(e.status)
 	}
-	s += "  enter to submit  esc to go back\n"
 	return s
 }
 
@@ -132,9 +143,16 @@ type listView struct {
 	name   string
 	lines  []string
 	loaded bool
+	w, h   int
 }
 
 func newListView(name string) listView { return listView{name: name} }
+
+// Title implements Titler.
+func (l listView) Title() string { return l.name }
+
+// HelpLine implements Helper.
+func (l listView) HelpLine() string { return "r refresh  esc back" }
 
 func (l listView) Init() tea.Cmd {
 	return func() tea.Msg { return loadListMsg{} }
@@ -147,6 +165,9 @@ func (l listView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case loadListMsg:
 		l.lines = l.fetch()
 		l.loaded = true
+	case tea.WindowSizeMsg:
+		sz := msg.(tea.WindowSizeMsg)
+		l.w, l.h = sz.Width, sz.Height
 	case tea.KeyMsg:
 		k := msg.(tea.KeyMsg)
 		if k.String() == "esc" || k.String() == "q" {
@@ -194,13 +215,8 @@ func (l listView) fetch() []string {
 }
 
 func (l listView) View() string {
-	s := fmt.Sprintf("  %s\n\n", l.name)
 	if !l.loaded {
-		return s + "  loading...\n"
+		return "  loading...\n"
 	}
-	for _, line := range l.lines {
-		s += "  " + line + "\n"
-	}
-	s += "\n  r refresh  esc back\n"
-	return s
+	return RenderList(l.lines, -1, l.w) + "\n"
 }
