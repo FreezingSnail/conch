@@ -33,7 +33,7 @@ func TestMantleView_implementsHelper(t *testing.T) {
 // TestMantleView_cursorRowStyled verifies the cursor row uses the ">" prefix.
 func TestMantleView_cursorRowStyled(t *testing.T) {
 	v := newMantleView()
-	v.agents = []string{"my-agent"}
+	v.agents = []agentDef{{Name: "my-agent"}}
 	v.cursor = 0
 	out := v.View()
 	if !strings.Contains(out, "> my-agent") {

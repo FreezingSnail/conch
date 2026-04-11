@@ -23,9 +23,18 @@ const (
 
 var mantleSectionNames = []string{"Agents", "Docs", "Settings", "Skills"}
 
+type agentDef struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Prompt      string          `json:"prompt"`
+	Tools       []string        `json:"tools"`
+	MCPServers  json.RawMessage `json:"mcpServers"`
+	Resources   []string        `json:"resources"`
+}
+
 type mantleView struct {
 	section  mantleSection
-	agents   []string
+	agents   []agentDef
 	skills   []string
 	cursor   int
 	content  string // raw content (for scroll line count)
@@ -46,7 +55,7 @@ func (v mantleView) width() int {
 }
 
 type mantleLoadedMsg struct {
-	agents   []string
+	agents   []agentDef
 	skills   []string
 	readme   string
 	settings string
@@ -72,19 +81,25 @@ func (v mantleView) HelpLine() string {
 
 func (v mantleView) Init() tea.Cmd {
 	return func() tea.Msg {
-		// agents
-		base := filepath.Join(os.Getenv("HOME"), ".conch", "agents")
-		entries, err := os.ReadDir(base)
+		// agents — load from JSON files
+		agentsBase := filepath.Join(os.Getenv("HOME"), ".conch", "agents")
+		agentEntries, err := os.ReadDir(agentsBase)
 		if err != nil {
-			entries, _ = os.ReadDir("tooling/agents")
-			base = "tooling/agents"
+			agentEntries, _ = os.ReadDir("tooling/agents")
+			agentsBase = "tooling/agents"
 		}
-		var agents []string
-		for _, e := range entries {
-			if e.IsDir() {
-				if _, err := os.Stat(filepath.Join(base, e.Name(), "SKILL.md")); err == nil {
-					agents = append(agents, e.Name())
-				}
+		var agents []agentDef
+		for _, e := range agentEntries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+				continue
+			}
+			b, err := os.ReadFile(filepath.Join(agentsBase, e.Name()))
+			if err != nil {
+				continue
+			}
+			var a agentDef
+			if json.Unmarshal(b, &a) == nil {
+				agents = append(agents, a)
 			}
 		}
 
@@ -188,8 +203,13 @@ func (v mantleView) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if len(v.agents) == 0 {
 				return v, nil
 			}
-			name := v.agents[v.cursor]
-			return v, readSkillCmd(filepath.Join(os.Getenv("HOME"), ".conch", "agents"), "tooling/agents", name)
+			a := v.agents[v.cursor]
+			content := agentDetailContent(a)
+			v.content = content
+			v.title = a.Name
+			v.scroll = 0
+			v.rendered = renderMarkdown(content, v.width())
+			return v, nil
 		case mantleSkills:
 			if len(v.skills) == 0 {
 				return v, nil
@@ -212,6 +232,31 @@ func (v mantleView) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 type mantleOpenMsg struct{ title, content string }
+
+// agentDetailContent builds a markdown document for an agent:
+// a table of metadata fields followed by the prompt rendered as markdown.
+func agentDetailContent(a agentDef) string {
+	var sb strings.Builder
+	sb.WriteString("# " + a.Name + "\n\n")
+
+	// metadata table
+	sb.WriteString("| Field | Value |\n|---|---|\n")
+	sb.WriteString("| description | " + strings.ReplaceAll(a.Description, "\n", " ") + " |\n")
+	if len(a.Tools) > 0 {
+		sb.WriteString("| tools | " + strings.Join(a.Tools, ", ") + " |\n")
+	}
+	if len(a.Resources) > 0 {
+		sb.WriteString("| resources | " + strings.Join(a.Resources, ", ") + " |\n")
+	}
+	if len(a.MCPServers) > 0 && string(a.MCPServers) != "null" {
+		sb.WriteString("| mcpServers | " + strings.ReplaceAll(string(a.MCPServers), "\n", " ") + " |\n")
+	}
+	sb.WriteString("\n---\n\n")
+
+	// prompt as markdown
+	sb.WriteString(a.Prompt)
+	return sb.String()
+}
 
 func readSkillCmd(primaryBase, fallbackBase, name string) tea.Cmd {
 	return func() tea.Msg {
@@ -272,11 +317,11 @@ func (v mantleView) View() string {
 		if len(v.agents) == 0 {
 			s += "  no agents found\n"
 		} else {
-			for i, name := range v.agents {
+			for i, a := range v.agents {
 				if i == v.cursor {
-					s += StyleCursor.Render("> "+name) + "\n"
+					s += StyleCursor.Render("> "+a.Name) + "\n"
 				} else {
-					s += "  " + name + "\n"
+					s += "  " + a.Name + "\n"
 				}
 			}
 		}

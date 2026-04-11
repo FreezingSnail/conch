@@ -18,7 +18,7 @@ func TestMenu_Title(t *testing.T) {
 // TestMenu_HelpLine verifies HelpLine() returns the expected navigation hint.
 func TestMenu_HelpLine(t *testing.T) {
 	m := newMenu()
-	want := "↑/↓ navigate  enter select  ctrl+t new tab  q quit"
+	want := "↑/↓ navigate  enter select  shortcut jump  ctrl+t new tab  q quit"
 	if m.HelpLine() != want {
 		t.Errorf("want %q, got %q", want, m.HelpLine())
 	}
@@ -47,8 +47,8 @@ func TestMenu_View_containsItems(t *testing.T) {
 	m := newMenu()
 	v := m.View()
 	for _, item := range menuItems {
-		if !strings.Contains(v, item) {
-			t.Errorf("expected item %q in View()", item)
+		if !strings.Contains(v, item.label) {
+			t.Errorf("expected item %q in View()", item.label)
 		}
 	}
 }
