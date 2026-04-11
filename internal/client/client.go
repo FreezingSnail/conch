@@ -39,21 +39,28 @@ type Request struct {
 	BeforeIDs     string   `json:"before_ids,omitempty"`
 	Worktree      string   `json:"worktree,omitempty"`
 	Dir           string   `json:"dir,omitempty"`
+	// Feedback note fields
+	CommitHash string `json:"commit_hash,omitempty"`
+	FilePath   string `json:"file_path,omitempty"`
+	HunkHeader string `json:"hunk_header,omitempty"`
+	NoteID     int64  `json:"note_id,omitempty"`
+	NoteBody   string `json:"note_body,omitempty"`
 }
 
 // Response is the daemon's reply. OK is false and Error is set on any failure.
 type Response struct {
-	OK          bool            `json:"ok"`
-	Error       string          `json:"error,omitempty"`
-	Sessions    []db.Session    `json:"sessions,omitempty"`
-	SessionLogs []db.SessionLog `json:"session_logs,omitempty"`
-	Tickets     []db.Ticket     `json:"tickets,omitempty"`
-	Tasks       []db.Task       `json:"tasks,omitempty"`
-	Task        *db.Task        `json:"task,omitempty"`
-	ID          int64           `json:"id,omitempty"`
-	SessionID   int64           `json:"session_id,omitempty"`
-	Repos       []string        `json:"repos,omitempty"`
-	Lines       []string        `json:"lines,omitempty"`
+	OK            bool              `json:"ok"`
+	Error         string            `json:"error,omitempty"`
+	Sessions      []db.Session      `json:"sessions,omitempty"`
+	SessionLogs   []db.SessionLog   `json:"session_logs,omitempty"`
+	Tickets       []db.Ticket       `json:"tickets,omitempty"`
+	Tasks         []db.Task         `json:"tasks,omitempty"`
+	Task          *db.Task          `json:"task,omitempty"`
+	ID            int64             `json:"id,omitempty"`
+	SessionID     int64             `json:"session_id,omitempty"`
+	Repos         []string          `json:"repos,omitempty"`
+	Lines         []string          `json:"lines,omitempty"`
+	FeedbackNotes []db.FeedbackNote `json:"feedback_notes,omitempty"`
 }
 
 // Send dials the socket, writes one JSON line, and reads one JSON line back.

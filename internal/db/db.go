@@ -81,6 +81,17 @@ func (d *DB) migrate() error {
 			repo TEXT NOT NULL,
 			worktree_path TEXT NOT NULL
 		);
+		CREATE TABLE IF NOT EXISTS feedback_notes (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			ticket_id INTEGER NOT NULL,
+			commit_hash TEXT NOT NULL,
+			file_path TEXT NOT NULL,
+			hunk_header TEXT NOT NULL,
+			body TEXT NOT NULL,
+			addressed INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		);
 	`)
 	if err != nil {
 		return err
@@ -414,4 +425,90 @@ func (d *DB) ListSessionLogs(sessionID int64) ([]SessionLog, error) {
 		logs = append(logs, l)
 	}
 	return logs, nil
+}
+
+// Feedback Notes
+
+// FeedbackNote is a review comment anchored to a specific hunk in a commit.
+type FeedbackNote struct {
+	ID         int64
+	TicketID   int64
+	CommitHash string
+	FilePath   string
+	HunkHeader string
+	Body       string
+	Addressed  bool
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
+// CreateFeedbackNote inserts a new feedback note and returns its ID.
+func (d *DB) CreateFeedbackNote(ticketID int64, commitHash, filePath, hunkHeader, body string) (int64, error) {
+	now := time.Now()
+	res, err := d.conn.Exec(
+		`INSERT INTO feedback_notes (ticket_id, commit_hash, file_path, hunk_header, body, addressed, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?)`,
+		ticketID, commitHash, filePath, hunkHeader, body, now, now,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+// ListFeedbackNotesByTicket returns all notes for the given ticket, oldest first.
+func (d *DB) ListFeedbackNotesByTicket(ticketID int64) ([]FeedbackNote, error) {
+	rows, err := d.conn.Query(
+		`SELECT id, ticket_id, commit_hash, file_path, hunk_header, body, addressed, created_at, updated_at FROM feedback_notes WHERE ticket_id=? ORDER BY created_at ASC`,
+		ticketID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanFeedbackNotes(rows)
+}
+
+// ListFeedbackNotesByHunk returns notes scoped to a specific commit/file/hunk within a ticket.
+func (d *DB) ListFeedbackNotesByHunk(ticketID int64, commitHash, filePath, hunkHeader string) ([]FeedbackNote, error) {
+	rows, err := d.conn.Query(
+		`SELECT id, ticket_id, commit_hash, file_path, hunk_header, body, addressed, created_at, updated_at FROM feedback_notes WHERE ticket_id=? AND commit_hash=? AND file_path=? AND hunk_header=? ORDER BY created_at ASC`,
+		ticketID, commitHash, filePath, hunkHeader,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanFeedbackNotes(rows)
+}
+
+// UpdateFeedbackNote replaces the body of the note with the given ID.
+func (d *DB) UpdateFeedbackNote(id int64, body string) error {
+	_, err := d.conn.Exec(`UPDATE feedback_notes SET body=?, updated_at=? WHERE id=?`, body, time.Now(), id)
+	return err
+}
+
+// DeleteFeedbackNote removes the note with the given ID.
+func (d *DB) DeleteFeedbackNote(id int64) error {
+	_, err := d.conn.Exec(`DELETE FROM feedback_notes WHERE id=?`, id)
+	return err
+}
+
+// MarkNotesAddressed sets addressed=1 for all notes belonging to the given ticket.
+func (d *DB) MarkNotesAddressed(ticketID int64) error {
+	_, err := d.conn.Exec(`UPDATE feedback_notes SET addressed=1, updated_at=? WHERE ticket_id=?`, time.Now(), ticketID)
+	return err
+}
+
+func scanFeedbackNotes(rows *sql.Rows) ([]FeedbackNote, error) {
+	var notes []FeedbackNote
+	for rows.Next() {
+		var n FeedbackNote
+		var addressed int
+		if err := rows.Scan(&n.ID, &n.TicketID, &n.CommitHash, &n.FilePath, &n.HunkHeader, &n.Body, &addressed, &n.CreatedAt, &n.UpdatedAt); err != nil {
+			return nil, err
+		}
+		n.Addressed = addressed == 1
+		notes = append(notes, n)
+	}
+	return notes, nil
 }

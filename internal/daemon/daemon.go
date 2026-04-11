@@ -11,6 +11,7 @@ import (
 	"github.com/FreezingSnail/conch/internal/config"
 	"github.com/FreezingSnail/conch/internal/db"
 	"github.com/FreezingSnail/conch/internal/git"
+	"github.com/FreezingSnail/conch/internal/harness"
 	"github.com/FreezingSnail/conch/internal/kiro"
 	"io"
 	"net"
@@ -517,6 +518,86 @@ func dispatch(req client.Request, database *db.DB) client.Response {
 			return client.Response{Error: err.Error()}
 		}
 		return client.Response{OK: true, Tasks: tasks}
+	case "replan_ticket":
+		if req.TicketID == 0 {
+			return client.Response{Error: "ticket_id required"}
+		}
+		notes, err := database.ListFeedbackNotesByTicket(req.TicketID)
+		if err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		// Collect only unaddressed notes for the prompt.
+		var unaddressed []db.FeedbackNote
+		for _, n := range notes {
+			if !n.Addressed {
+				unaddressed = append(unaddressed, n)
+			}
+		}
+		if err := database.MarkNotesAddressed(req.TicketID); err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		ticket, err := database.GetTicketByID(req.TicketID)
+		if err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		if !harness.InTmux() {
+			return client.Response{Error: "must be running inside tmux"}
+		}
+		prompt := kiro.BuildReplanPrompt(ticket.TicketNumber, ticket.ID, unaddressed)
+		if err := harness.SpawnTmuxWindow(kiro.Kiro{}, ticket.TicketNumber, "planning", prompt, ticket.WorktreePath, 0, ""); err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		return client.Response{OK: true}
+
+	case "list_feedback_notes":
+		if req.TicketID == 0 {
+			return client.Response{Error: "ticket_id required"}
+		}
+		notes, err := database.ListFeedbackNotesByTicket(req.TicketID)
+		if err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		return client.Response{OK: true, FeedbackNotes: notes}
+
+	case "create_feedback_note":
+		if req.TicketID == 0 || req.CommitHash == "" {
+			return client.Response{Error: "ticket_id and commit_hash required"}
+		}
+		id, err := database.CreateFeedbackNote(req.TicketID, req.CommitHash, req.FilePath, req.HunkHeader, req.NoteBody)
+		if err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		syncGitNote(database, req.TicketID, req.CommitHash)
+		return client.Response{OK: true, ID: id}
+
+	case "update_feedback_note":
+		if req.NoteID == 0 {
+			return client.Response{Error: "note_id required"}
+		}
+		if err := database.UpdateFeedbackNote(req.NoteID, req.NoteBody); err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		syncGitNote(database, req.TicketID, req.CommitHash)
+		return client.Response{OK: true}
+
+	case "delete_feedback_note":
+		if req.NoteID == 0 {
+			return client.Response{Error: "note_id required"}
+		}
+		if err := database.DeleteFeedbackNote(req.NoteID); err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		syncGitNote(database, req.TicketID, req.CommitHash)
+		return client.Response{OK: true}
+
+	case "mark_notes_addressed":
+		if req.TicketID == 0 {
+			return client.Response{Error: "ticket_id required"}
+		}
+		if err := database.MarkNotesAddressed(req.TicketID); err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		return client.Response{OK: true}
 
 	default:
 		return client.Response{Error: "unknown action"}
@@ -659,6 +740,41 @@ func augmentTests(body string) string {
 	}
 	cases = append(cases, "- `test_invalid_input`: given missing or invalid input, expect error")
 	return "## Tests\n\n" + strings.Join(cases, "\n")
+}
+
+// syncGitNote fetches all feedback notes for (ticketID, commitHash) from the DB,
+// marshals them to a JSON array, and writes them as a git note on that commit.
+// If no notes remain, the git note is removed. Errors are silently ignored because
+// git note sync is best-effort — the DB is the source of truth.
+func syncGitNote(database *db.DB, ticketID int64, commitHash string) {
+	if commitHash == "" {
+		return
+	}
+	ticket, err := database.GetTicketByID(ticketID)
+	if err != nil || ticket.WorktreePath == "" {
+		return
+	}
+	// Fetch all notes for this commit across all hunks/files.
+	notes, err := database.ListFeedbackNotesByTicket(ticketID)
+	if err != nil {
+		return
+	}
+	// Filter to only notes for this specific commit.
+	var commitNotes []db.FeedbackNote
+	for _, n := range notes {
+		if n.CommitHash == commitHash {
+			commitNotes = append(commitNotes, n)
+		}
+	}
+	if len(commitNotes) == 0 {
+		git.NoteRemove(ticket.WorktreePath, commitHash)
+		return
+	}
+	b, err := json.Marshal(commitNotes)
+	if err != nil {
+		return
+	}
+	git.NoteSet(ticket.WorktreePath, commitHash, string(b))
 }
 
 // runExecutor spawns a headless kiro executor in the ticket's worktree and

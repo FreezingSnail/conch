@@ -145,3 +145,88 @@ func TestGetTicketByID(t *testing.T) {
 		t.Fatal("expected error for missing ticket, got nil")
 	}
 }
+
+func openTestDB(t *testing.T) *DB {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	d, err := Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { d.Close() })
+	return d
+}
+
+func TestFeedbackNotesCRUD(t *testing.T) {
+	d := openTestDB(t)
+
+	ticketID, err := d.CreateTicket("T-1", "t", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	id, err := d.CreateFeedbackNote(ticketID, "abc123", "main.go", "@@ -1,3 +1,4 @@", "initial body")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// list by ticket — expect 1
+	notes, err := d.ListFeedbackNotesByTicket(ticketID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(notes) != 1 || notes[0].ID != id {
+		t.Fatalf("expected 1 note, got %+v", notes)
+	}
+
+	// list by hunk — expect 1
+	byHunk, err := d.ListFeedbackNotesByHunk(ticketID, "abc123", "main.go", "@@ -1,3 +1,4 @@")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(byHunk) != 1 || byHunk[0].ID != id {
+		t.Fatalf("expected 1 note by hunk, got %+v", byHunk)
+	}
+
+	// update body
+	if err := d.UpdateFeedbackNote(id, "updated body"); err != nil {
+		t.Fatal(err)
+	}
+	notes, _ = d.ListFeedbackNotesByTicket(ticketID)
+	if notes[0].Body != "updated body" {
+		t.Fatalf("expected updated body, got %q", notes[0].Body)
+	}
+
+	// delete — list should return 0
+	if err := d.DeleteFeedbackNote(id); err != nil {
+		t.Fatal(err)
+	}
+	notes, _ = d.ListFeedbackNotesByTicket(ticketID)
+	if len(notes) != 0 {
+		t.Fatalf("expected 0 notes after delete, got %d", len(notes))
+	}
+}
+
+func TestMarkNotesAddressed(t *testing.T) {
+	d := openTestDB(t)
+
+	t1, _ := d.CreateTicket("T-1", "t1", "", "")
+	t2, _ := d.CreateTicket("T-2", "t2", "", "")
+
+	d.CreateFeedbackNote(t1, "abc", "a.go", "@@ -1 @@", "note for t1")
+	d.CreateFeedbackNote(t2, "def", "b.go", "@@ -2 @@", "note for t2")
+
+	if err := d.MarkNotesAddressed(t1); err != nil {
+		t.Fatal(err)
+	}
+
+	t1Notes, _ := d.ListFeedbackNotesByTicket(t1)
+	if !t1Notes[0].Addressed {
+		t.Fatal("expected t1 note to be addressed")
+	}
+
+	t2Notes, _ := d.ListFeedbackNotesByTicket(t2)
+	if t2Notes[0].Addressed {
+		t.Fatal("expected t2 note to remain unaddressed")
+	}
+}

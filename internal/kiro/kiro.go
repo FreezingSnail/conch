@@ -90,6 +90,21 @@ func BuildPrompt(ticketNumber string, ticketID int64) string {
 	return fmt.Sprintf("[CONCH PLANNING] ticket:%s id:%d", ticketNumber, ticketID)
 }
 
+// BuildReplanPrompt builds the prompt for a replanning session, prepending any
+// unaddressed feedback notes as additional context. If notes is empty the
+// "Additional context" section is omitted so the prompt stays minimal.
+func BuildReplanPrompt(ticketNumber string, ticketID int64, notes []db.FeedbackNote) string {
+	header := fmt.Sprintf("[CONCH PLANNING] ticket:%s id:%d", ticketNumber, ticketID)
+	if len(notes) == 0 {
+		return header
+	}
+	lines := make([]string, len(notes))
+	for i, n := range notes {
+		lines[i] = fmt.Sprintf("- %s %s: %s", n.FilePath, n.HunkHeader, n.Body)
+	}
+	return header + "\n\nAdditional context (feedback notes from previous burrow session):\n" + strings.Join(lines, "\n")
+}
+
 // BuildExecutorPrompt builds the initial prompt for a headless executor session.
 func BuildExecutorPrompt(ticketNumber string, ticketID int64, tasks []db.Task) string {
 	lines := make([]string, len(tasks))
