@@ -18,6 +18,7 @@ import (
 	"github.com/FreezingSnail/conch/internal/config"
 	"github.com/FreezingSnail/conch/internal/db"
 	"github.com/FreezingSnail/conch/internal/git"
+	"github.com/FreezingSnail/conch/internal/harness"
 	"github.com/FreezingSnail/conch/internal/kiro"
 )
 
@@ -500,6 +501,37 @@ func dispatch(req client.Request, database *db.DB) client.Response {
 		}
 		go runExecutor(sessionID, prompt, ticket.WorktreePath, database)
 		return client.Response{OK: true, ID: sessionID}
+
+	case "replan_ticket":
+		if req.TicketID == 0 {
+			return client.Response{Error: "ticket_id required"}
+		}
+		notes, err := database.ListFeedbackNotesByTicket(req.TicketID)
+		if err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		// Collect only unaddressed notes for the prompt.
+		var unaddressed []db.FeedbackNote
+		for _, n := range notes {
+			if !n.Addressed {
+				unaddressed = append(unaddressed, n)
+			}
+		}
+		if err := database.MarkNotesAddressed(req.TicketID); err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		ticket, err := database.GetTicketByID(req.TicketID)
+		if err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		if !harness.InTmux() {
+			return client.Response{Error: "must be running inside tmux"}
+		}
+		prompt := kiro.BuildReplanPrompt(ticket.TicketNumber, ticket.ID, unaddressed)
+		if err := harness.SpawnTmuxWindow(kiro.Kiro{}, ticket.TicketNumber, "planning", prompt, ticket.WorktreePath, 0, ""); err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		return client.Response{OK: true}
 
 	case "list_feedback_notes":
 		if req.TicketID == 0 {

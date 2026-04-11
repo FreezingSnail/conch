@@ -161,3 +161,45 @@ func TestDaemonFeedbackNotesCRUD(t *testing.T) {
 func TestDaemonMarkNotesAddressed(t *testing.T) {
 	test_daemon_mark_notes_addressed(t)
 }
+
+// test_replan_ticket_marks_addressed seeds notes, calls replan_ticket with TMUX
+// set, and verifies all notes for that ticket are addressed in the DB.
+// SpawnTmuxWindow will fail (no real tmux process), but MarkNotesAddressed runs
+// before the spawn, so the DB state is the observable outcome under test.
+func test_replan_ticket_marks_addressed(t *testing.T) {
+	database := openTestDB(t)
+	ticketID := seedTicket(t, database)
+
+	// Seed two unaddressed notes.
+	for _, body := range []string{"first note", "second note"} {
+		_, err := database.CreateFeedbackNote(ticketID, "abc123", "main.go", "@@ -1 @@", body)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Set TMUX so InTmux() returns true; SpawnTmuxWindow will fail but that is
+	// after MarkNotesAddressed, which is the behaviour under test.
+	t.Setenv("TMUX", "/tmp/tmux-test,0,0")
+
+	dispatch(client.Request{Action: "replan_ticket", TicketID: ticketID}, database)
+
+	// All notes must be addressed regardless of the tmux spawn outcome.
+	notes, err := database.ListFeedbackNotesByTicket(ticketID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(notes) != 2 {
+		t.Fatalf("expected 2 notes, got %d", len(notes))
+	}
+	for _, n := range notes {
+		if !n.Addressed {
+			t.Fatalf("expected note %d to be addressed", n.ID)
+		}
+	}
+}
+
+// TestReplanTicketMarksAddressed is the Go test entry point for test_replan_ticket_marks_addressed.
+func TestReplanTicketMarksAddressed(t *testing.T) {
+	test_replan_ticket_marks_addressed(t)
+}

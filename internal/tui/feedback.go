@@ -146,7 +146,8 @@ func (v feedbackView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "b":
 			return v, push(newBurrowView())
 		case "r":
-			// Send replan_ticket to the daemon; handler wired in a later task.
+			// Spawn a replanning session for the selected ticket. On success,
+			// reload so the ticket moves to the Archived tab (notes now addressed).
 			visible := v.tabTickets()
 			if len(visible) == 0 || v.cursor >= len(visible) {
 				return v, nil
@@ -160,7 +161,8 @@ func (v feedbackView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if !resp.OK {
 					return feedbackStatusMsg{"error: " + resp.Error}
 				}
-				return feedbackStatusMsg{"replan requested"}
+				// Reload so the ticket moves to Archived now that notes are addressed.
+				return loadFeedback()
 			}
 		}
 	case feedbackStatusMsg:
