@@ -17,8 +17,6 @@ type planStep int
 
 const (
 	stepTicketNum  planStep = iota // collect free-text ticket number
-	stepDesc                       // collect short description
-	stepContext                    // collect additional context (optional)
 	stepRepoPicker                 // multi-select repos
 	stepSummary                    // show task summary after kiro exits
 )
@@ -30,8 +28,6 @@ type planningWizard struct {
 
 	// text input fields
 	ticketNum string
-	desc      string
-	context   string
 
 	// repo picker state
 	repos   []string
@@ -110,9 +106,9 @@ func (w planningWizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		w.sessionID = msg.sessionID
 		w.worktree = msg.worktree
 		w.beforeIDs = kiro.ListSessionIDs(w.worktree)
-		prompt := kiro.BuildPrompt(w.ticketNum, w.ticketID, w.desc, w.context)
+		prompt := kiro.BuildPrompt(w.ticketNum, w.ticketID)
 		if harness.InTmux() {
-			err := harness.SpawnTmuxWindow(kiro.Kiro{}, w.ticketNum+": "+w.desc, "planning", prompt, w.worktree, w.sessionID, harness.JoinIDs(w.beforeIDs))
+			err := harness.SpawnTmuxWindow(kiro.Kiro{}, w.ticketNum, "planning", prompt, w.worktree, w.sessionID, harness.JoinIDs(w.beforeIDs))
 			if err != nil {
 				w.status = "tmux error: " + err.Error()
 				w.step = stepRepoPicker
@@ -175,26 +171,10 @@ func (w planningWizard) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		w.ticketNum = applyTextInput(w.ticketNum, msg.String())
 		if msg.String() == "enter" {
 			if strings.TrimSpace(w.ticketNum) != "" {
-				w.step = stepDesc
+				w.step = stepRepoPicker
 			}
 		} else if msg.String() == "esc" {
 			return w, pop()
-		}
-	case stepDesc:
-		w.desc = applyTextInput(w.desc, msg.String())
-		if msg.String() == "enter" {
-			if strings.TrimSpace(w.desc) != "" {
-				w.step = stepContext
-			}
-		} else if msg.String() == "esc" {
-			w.step = stepTicketNum
-		}
-	case stepContext:
-		w.context = applyTextInput(w.context, msg.String())
-		if msg.String() == "enter" {
-			w.step = stepRepoPicker
-		} else if msg.String() == "esc" {
-			w.step = stepDesc
 		}
 	case stepRepoPicker:
 		return w.handleRepoPicker(msg)
@@ -228,7 +208,7 @@ func (w planningWizard) handleRepoPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	switch msg.String() {
 	case "esc":
-		w.step = stepContext
+		w.step = stepTicketNum
 	case "up", "k":
 		if w.repoCur > 0 {
 			w.repoCur--
@@ -267,14 +247,11 @@ func (w planningWizard) selectedRepos() []string {
 // doPlanSetup sends plan_setup to the daemon and returns a Cmd.
 func (w planningWizard) doPlanSetup(repos []string) tea.Cmd {
 	ticketNum := w.ticketNum
-	title := w.desc
-	desc := w.context
 	return func() tea.Msg {
 		resp, err := client.Send(client.Request{
 			Action:       "plan_setup",
 			TicketNumber: ticketNum,
-			Title:        title,
-			Description:  desc,
+			Title:        ticketNum,
 			Repos:        repos,
 		})
 		if err != nil {
@@ -296,10 +273,6 @@ func (w planningWizard) View() string {
 	switch w.step {
 	case stepTicketNum:
 		return fmt.Sprintf("  Plan — new ticket\n\n%s\n\n  enter next  esc back\n", wrapInput("Ticket number: ", w.ticketNum, w.width))
-	case stepDesc:
-		return fmt.Sprintf("  Plan — %s\n\n%s\n\n  enter next  esc back\n", w.ticketNum, wrapInput("Description: ", w.desc, w.width))
-	case stepContext:
-		return fmt.Sprintf("  Plan — %s\n\n%s\n\n  enter next  esc back\n", w.ticketNum, wrapInput("Additional context (optional): ", w.context, w.width))
 	case stepRepoPicker:
 		return w.viewRepoPicker()
 	case stepSummary:

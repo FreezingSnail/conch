@@ -13,8 +13,8 @@ type burrowTab int
 
 const (
 	burrowTabPending     burrowTab = iota // unstarted + running
-	burrowTabNeedsReview                 // session completed, awaiting review
-	burrowTabComplete                    // reviewed (future)
+	burrowTabNeedsReview                  // session completed, awaiting review
+	burrowTabComplete                     // reviewed (future)
 )
 
 var burrowTabNames = []string{"Pending", "Needs Review", "Complete"}

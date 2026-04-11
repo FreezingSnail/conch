@@ -1,10 +1,7 @@
-# binaries
-conch
-conchd
-
 # build output
 /bin/
 
 # go
 *.test
 *.out
+.agents/
