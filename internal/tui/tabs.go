@@ -78,7 +78,8 @@ func (t tabsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return t.closeActive()
 		}
 		t.tabs[t.active].stack = stack[:len(stack)-1]
-		// Restore tab name from the new top (menu has no Title, so reset to "menu").
+		// Restore tab name from the new top via Titler; fall back to "menu" for
+		// models that don't implement it.
 		if titler, ok := t.tabs[t.active].top().(Titler); ok {
 			t.tabs[t.active].name = titler.Title()
 		} else {

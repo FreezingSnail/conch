@@ -124,14 +124,14 @@ func TestPushMsg_updatesTabName(t *testing.T) {
 	}
 }
 
-// TestPopMsg_restoresMenuName verifies that popping back to the menu resets
-// the tab name to "menu".
+// TestPopMsg_restoresMenuName verifies that popping back to the menu restores
+// the tab name from menu's Title() ("conch").
 func TestPopMsg_restoresMenuName(t *testing.T) {
 	m := newTabsModel()
 	m, _ = sendMsg(m, pushMsg{model: titledModel{title: "tickets"}})
 	m, _ = sendMsg(m, popMsg{})
-	if m.tabs[0].name != "menu" {
-		t.Errorf("want tab name %q after pop, got %q", "menu", m.tabs[0].name)
+	if m.tabs[0].name != "conch" {
+		t.Errorf("want tab name %q after pop, got %q", "conch", m.tabs[0].name)
 	}
 }
 
