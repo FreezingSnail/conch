@@ -23,8 +23,8 @@ const (
 
 // planningWizard is the multi-step planning flow model.
 type planningWizard struct {
-	step  planStep
-	width int // terminal width for word-wrap
+	step planStep
+	w, h int // terminal dimensions
 
 	// text input fields
 	ticketNum string
@@ -75,6 +75,21 @@ type planTasksMsg struct {
 
 func newPlanningWizard() planningWizard { return planningWizard{} }
 
+// Title implements Titler; used by the tab bar chrome.
+func (w planningWizard) Title() string { return "Plan" }
+
+// HelpLine implements Helper; returns context-sensitive keybinding hints.
+func (w planningWizard) HelpLine() string {
+	switch w.step {
+	case stepTicketNum:
+		return "enter next  esc back"
+	case stepRepoPicker:
+		return "space toggle  enter confirm  esc back"
+	default:
+		return "any key to return to menu"
+	}
+}
+
 func (w planningWizard) Init() tea.Cmd {
 	return func() tea.Msg {
 		resp, err := client.Send(client.Request{Action: "list_repos"})
@@ -89,7 +104,7 @@ func (w planningWizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 
 	case tea.WindowSizeMsg:
-		w.width = msg.Width
+		w.w, w.h = msg.Width, msg.Height
 
 	case reposLoadedForPlanMsg:
 		w.repos = msg.repos
@@ -272,7 +287,7 @@ func (w planningWizard) doPlanSetup(repos []string) tea.Cmd {
 func (w planningWizard) View() string {
 	switch w.step {
 	case stepTicketNum:
-		return fmt.Sprintf("  Plan — new ticket\n\n%s\n\n  enter next  esc back\n", wrapInput("Ticket number: ", w.ticketNum, w.width))
+		return fmt.Sprintf("  %s\n\n%s\n", StyleTitle.Render("Plan — new ticket"), wrapInput("Ticket number: ", w.ticketNum, w.w))
 	case stepRepoPicker:
 		return w.viewRepoPicker()
 	case stepSummary:
@@ -282,35 +297,35 @@ func (w planningWizard) View() string {
 }
 
 func (w planningWizard) viewRepoPicker() string {
-	s := fmt.Sprintf("  Plan — %s — select repos\n\n", w.ticketNum)
+	s := "  " + StyleTitle.Render(fmt.Sprintf("Plan — %s — select repos", w.ticketNum)) + "\n\n"
 	if !w.loaded {
 		return s + "  loading repos...\n"
 	}
 	if len(w.repos) == 0 {
-		return s + "  no repos found\n\n  esc back\n"
+		return s + "  no repos found\n"
 	}
 	for i, r := range w.repos {
-		cursor := "  "
-		if i == w.repoCur {
-			cursor = "> "
-		}
 		check := "[ ]"
 		if w.repoSel[i] {
 			check = "[x]"
 		}
-		s += fmt.Sprintf("%s%s %s\n", cursor, check, filepath.Base(r))
+		row := fmt.Sprintf("%s %s", check, filepath.Base(r))
+		if i == w.repoCur {
+			s += StyleCursor.Render("> "+row) + "\n"
+		} else {
+			s += "  " + row + "\n"
+		}
 	}
 	if w.status != "" {
-		s += "\n  " + w.status + "\n"
+		s += "\n  " + statusLine(w.status) + "\n"
 	}
-	s += "\n  space toggle  enter confirm  esc back\n"
 	return s
 }
 
 func (w planningWizard) viewSummary() string {
-	s := fmt.Sprintf("  Plan — %s — complete\n\n", w.ticketNum)
+	s := "  " + StyleTitle.Render(fmt.Sprintf("Plan — %s — complete", w.ticketNum)) + "\n\n"
 	if w.status != "" {
-		s += "  " + w.status + "\n\n"
+		s += "  " + statusLine(w.status) + "\n\n"
 	}
 	if len(w.tasks) == 0 {
 		s += "  no tasks created yet\n"
@@ -320,6 +335,5 @@ func (w planningWizard) viewSummary() string {
 			s += fmt.Sprintf("  [%s] %s\n", t.status, t.title)
 		}
 	}
-	s += "\n  any key to return to menu\n"
 	return s
 }

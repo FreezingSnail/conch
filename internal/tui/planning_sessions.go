@@ -16,6 +16,7 @@ type planningSessionsView struct {
 	cursor   int
 	status   string
 	loaded   bool
+	w, h     int
 }
 
 type planningSessionsLoadedMsg struct {
@@ -25,6 +26,14 @@ type planningSessionsLoadedMsg struct {
 }
 
 func newPlanningSessionsView() planningSessionsView { return planningSessionsView{} }
+
+// Title implements Titler; used by the tab bar chrome.
+func (v planningSessionsView) Title() string { return "Planning Sessions" }
+
+// HelpLine implements Helper; returns context-sensitive keybinding hints.
+func (v planningSessionsView) HelpLine() string {
+	return "↑/↓ navigate  enter resume  r refresh  esc back"
+}
 
 func (v planningSessionsView) Init() tea.Cmd { return loadPlanningSessions }
 
@@ -53,6 +62,9 @@ func loadPlanningSessions() tea.Msg {
 
 func (v planningSessionsView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		v.w, v.h = msg.Width, msg.Height
+
 	case planningSessionsLoadedMsg:
 		if msg.err != "" {
 			v.status = "error: " + msg.err
@@ -102,30 +114,31 @@ func (v planningSessionsView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (v planningSessionsView) View() string {
-	s := "  Planning Sessions\n\n"
+	s := "  " + StyleTitle.Render("Planning Sessions") + "\n\n"
 	if !v.loaded {
 		return s + "  loading...\n"
 	}
 	if len(v.sessions) == 0 {
-		return s + "  no planning sessions yet\n\n  r refresh  esc back\n"
-	}
-	for i, sess := range v.sessions {
-		cursor := "  "
-		if i == v.cursor {
-			cursor = "> "
-		}
-		title := fmt.Sprintf("session %d", sess.ID)
-		if t, ok := v.tickets[sess.TicketID]; ok {
-			title = t.TicketNumber
-			if t.Title != "" {
-				title += " " + t.Title
+		s += "  no planning sessions yet\n"
+	} else {
+		for i, sess := range v.sessions {
+			title := fmt.Sprintf("session %d", sess.ID)
+			if t, ok := v.tickets[sess.TicketID]; ok {
+				title = t.TicketNumber
+				if t.Title != "" {
+					title += " " + t.Title
+				}
+			}
+			row := fmt.Sprintf("[%s] %s  %s", sess.Status, title, sess.StartedAt.Format("01-02 15:04"))
+			if i == v.cursor {
+				s += StyleCursor.Render("> "+row) + "\n"
+			} else {
+				s += "  " + row + "\n"
 			}
 		}
-		s += fmt.Sprintf("%s[%s] %s  %s\n", cursor, sess.Status, title, sess.StartedAt.Format("01-02 15:04"))
 	}
 	if v.status != "" {
-		s += "\n  " + v.status + "\n"
+		s += "\n  " + statusLine(v.status) + "\n"
 	}
-	s += "\n  ↑/↓ navigate  enter resume  r refresh  esc back\n"
 	return s
 }
