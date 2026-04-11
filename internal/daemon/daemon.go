@@ -13,12 +13,23 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/FreezingSnail/conch/internal/assets"
 	"github.com/FreezingSnail/conch/internal/client"
 	"github.com/FreezingSnail/conch/internal/config"
 	"github.com/FreezingSnail/conch/internal/db"
 	"github.com/FreezingSnail/conch/internal/git"
 	"github.com/FreezingSnail/conch/internal/kiro"
 )
+
+// seedKiroConfig writes the embedded lsp.json into <worktreePath>/.kiro/settings/lsp.json.
+// Non-fatal: worktree is still usable without it.
+func seedKiroConfig(worktreePath string) {
+	dst := filepath.Join(worktreePath, ".kiro", "settings", "lsp.json")
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return
+	}
+	os.WriteFile(dst, assets.KiroLSPConfig, 0o644) //nolint:errcheck
+}
 
 // SockAddr returns the canonical Unix socket path under $HOME/.conch.
 func SockAddr() string {
@@ -239,6 +250,7 @@ func dispatch(req client.Request, database *db.DB) client.Response {
 		if err := database.SetTicketRepo(req.TicketID, req.Repo, wtPath); err != nil {
 			return client.Response{Error: err.Error()}
 		}
+		seedKiroConfig(wtPath)
 		return client.Response{OK: true}
 
 	case "delete_ticket":
@@ -401,6 +413,7 @@ func dispatch(req client.Request, database *db.DB) client.Response {
 			if err := database.SetTicketRepo(ticketID, repo, wtPath); err != nil {
 				return client.Response{Error: err.Error()}
 			}
+			seedKiroConfig(wtPath)
 		}
 		sessionID, err := database.CreateSession(ticketID, "kiro", "running")
 		if err != nil {
