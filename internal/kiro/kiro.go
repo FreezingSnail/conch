@@ -86,12 +86,8 @@ func NewSessionID(before, after []string) string {
 }
 
 // BuildPrompt formats the planning context string passed to kiro-cli.
-func BuildPrompt(ticketNumber string, ticketID int64, desc, context string) string {
-	s := fmt.Sprintf("[CONCH PLANNING] ticket:%s id:%d\ndesc:%s", ticketNumber, ticketID, desc)
-	if strings.TrimSpace(context) != "" {
-		s += "\ncontext:" + context
-	}
-	return s
+func BuildPrompt(ticketNumber string, ticketID int64) string {
+	return fmt.Sprintf("[CONCH PLANNING] ticket:%s id:%d", ticketNumber, ticketID)
 }
 
 // BuildExecutorPrompt builds the initial prompt for a headless executor session.

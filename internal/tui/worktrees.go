@@ -16,8 +16,8 @@ type worktreesView struct {
 	loaded  bool
 	status  string
 	// confirm state
-	confirming  bool
-	confirmMsg  string
+	confirming    bool
+	confirmMsg    string
 	confirmAction string
 	// output overlay
 	output string

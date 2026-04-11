@@ -39,7 +39,7 @@ func newView(name string) tea.Model {
 
 type stubView struct{ name string }
 
-func (s stubView) Init() tea.Cmd                           { return nil }
+func (s stubView) Init() tea.Cmd { return nil }
 func (s stubView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if k, ok := msg.(tea.KeyMsg); ok && (k.String() == "esc" || k.String() == "q") {
 		return s, pop()
@@ -129,9 +129,9 @@ func pollCmd() tea.Cmd {
 // --- list views (tickets + sessions) ---
 
 type listView struct {
-	name     string
-	lines    []string
-	loaded   bool
+	name   string
+	lines  []string
+	loaded bool
 }
 
 func newListView(name string) listView { return listView{name: name} }
