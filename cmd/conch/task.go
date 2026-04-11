@@ -20,6 +20,7 @@ subcommands:
   remove-dep      --blocker <id> --blocked <id>
   list-blocked-by --task <id>
   list-blocks     --task <id>
+  import          --ticket <id> --dir <path>
 `
 
 func runTask(args []string) {
@@ -118,6 +119,17 @@ func runTask(args []string) {
 			os.Exit(1)
 		}
 		req = client.Request{Action: "list_blocks", TaskID: *task}
+
+	case "import":
+		fs := flag.NewFlagSet("import", flag.ExitOnError)
+		ticket := fs.Int64("ticket", 0, "ticket ID")
+		dir := fs.String("dir", "", "directory containing .code-task.md files")
+		fs.Parse(rest) //nolint:errcheck
+		if *ticket == 0 || *dir == "" {
+			fmt.Fprintln(os.Stderr, "import: --ticket and --dir required")
+			os.Exit(1)
+		}
+		req = client.Request{Action: "import_tasks", TicketID: *ticket, Dir: *dir}
 
 	default:
 		fmt.Fprintf(os.Stderr, "unknown subcommand %q\n\n%s", sub, taskUsage)

@@ -8,6 +8,8 @@ import (
 
 	"github.com/FreezingSnail/conch/internal/client"
 	"github.com/FreezingSnail/conch/internal/db"
+	"github.com/FreezingSnail/conch/internal/harness"
+	"github.com/FreezingSnail/conch/internal/kiro"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -16,10 +18,10 @@ type burrowTab int
 const (
 	burrowTabPending     burrowTab = iota // unstarted + running
 	burrowTabNeedsReview                  // session completed, awaiting review
-	burrowTabComplete                     // reviewed (future)
+	burrowTabHumanHelp                    // error or needs_human — resume here
 )
 
-var burrowTabNames = []string{"Pending", "Needs Review", "Complete"}
+var burrowTabNames = []string{"Pending", "Needs Review", "Human Help"}
 
 type burrowView struct {
 	tickets    []db.Ticket
@@ -64,10 +66,10 @@ func loadSessionsAndLogs(ticketID int64) tea.Cmd {
 		if err != nil || !sr.OK {
 			return burrowSessionsMsg{}
 		}
-		sessionID := ticketExecSessionID(ticketID, sr.Sessions)
+		sess := ticketExecSession(ticketID, sr.Sessions)
 		var lines []string
-		if sessionID != 0 {
-			lr, err := client.Send(client.Request{Action: "list_session_logs", SessionID: sessionID})
+		if sess != nil {
+			lr, err := client.Send(client.Request{Action: "list_session_logs", SessionID: sess.ID})
 			if err == nil && lr.OK {
 				lines = make([]string, len(lr.SessionLogs))
 				for i, l := range lr.SessionLogs {
@@ -86,6 +88,9 @@ func (v burrowView) Title() string { return "Burrow" }
 
 // HelpLine implements Helper; returns context-sensitive keybinding hints.
 func (v burrowView) HelpLine() string {
+	if v.tab == burrowTabHumanHelp {
+		return "tab switch tabs  ↑/↓ navigate  enter resume  D delete  r refresh  esc back"
+	}
 	return "tab switch tabs  ↑/↓ navigate  enter start  D delete  r refresh  esc back"
 }
 
@@ -131,21 +136,32 @@ func ticketExecSessionID(ticketID int64, sessions []db.Session) int64 {
 	return 0
 }
 
+// ticketExecSession returns the most recent executor session for a ticket, or nil.
+func ticketExecSession(ticketID int64, sessions []db.Session) *db.Session {
+	for i := range sessions {
+		if sessions[i].TicketID == ticketID && sessions[i].Harness == "kiro-executor" {
+			return &sessions[i]
+		}
+	}
+	return nil
+}
+
 func loadLogsForTicket(ticketID int64, sessions []db.Session) tea.Cmd {
-	sessionID := ticketExecSessionID(ticketID, sessions)
-	if sessionID == 0 {
+	sess := ticketExecSession(ticketID, sessions)
+	if sess == nil {
 		return func() tea.Msg { return burrowLogsMsg{} }
 	}
+	sessionID := sess.ID
 	return func() tea.Msg {
 		resp, err := client.Send(client.Request{Action: "list_session_logs", SessionID: sessionID})
-		if err != nil || !resp.OK {
-			return burrowLogsMsg{}
+		if err == nil && resp.OK {
+			lines := make([]string, len(resp.SessionLogs))
+			for i, l := range resp.SessionLogs {
+				lines[i] = l.Payload
+			}
+			return burrowLogsMsg{lines: lines}
 		}
-		lines := make([]string, len(resp.SessionLogs))
-		for i, l := range resp.SessionLogs {
-			lines[i] = l.Payload
-		}
-		return burrowLogsMsg{lines: lines}
+		return burrowLogsMsg{}
 	}
 }
 
@@ -163,11 +179,13 @@ func (v burrowView) tabTickets() []db.Ticket {
 				out = append(out, t)
 			}
 		case burrowTabNeedsReview:
-			if st == "completed" || st == "error" {
+			if st == "completed" {
 				out = append(out, t)
 			}
-		case burrowTabComplete:
-			// future
+		case burrowTabHumanHelp:
+			if st == "error" || st == "needs_human" {
+				out = append(out, t)
+			}
 		}
 	}
 	return out
@@ -369,6 +387,23 @@ func (v burrowView) handleEnter() tea.Cmd {
 	}
 	t := visible[v.cursor]
 
+	if v.tab == burrowTabHumanHelp {
+		if t.WorktreePath == "" {
+			return func() tea.Msg { return burrowStartedMsg{err: "no worktree for this ticket"} }
+		}
+		if harness.InTmux() {
+			return func() tea.Msg {
+				if err := harness.SpawnTmuxPaneResume(kiro.Kiro{}, t.WorktreePath); err != nil {
+					return burrowStartedMsg{err: "tmux error: " + err.Error()}
+				}
+				return nil
+			}
+		}
+		cmd := kiro.Kiro{}.Interactive()
+		cmd.Dir = t.WorktreePath
+		return tea.ExecProcess(cmd, func(err error) tea.Msg { return nil })
+	}
+
 	if v.tab == burrowTabNeedsReview {
 		ticketID := t.ID
 		return func() tea.Msg {
@@ -525,6 +560,10 @@ func (v burrowView) View() string {
 		}
 	}
 
-	b.WriteString("\n  tab switch tabs  ↑/↓ navigate  enter start  l log  x kill  D delete  r refresh  esc back\n")
+	if v.tab == burrowTabHumanHelp {
+		b.WriteString("\n  tab switch tabs  ↑/↓ navigate  enter resume  l log  D delete  r refresh  esc back\n")
+	} else {
+		b.WriteString("\n  tab switch tabs  ↑/↓ navigate  enter start  l log  x kill  D delete  r refresh  esc back\n")
+	}
 	return b.String()
 }

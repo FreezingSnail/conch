@@ -38,6 +38,7 @@ type Request struct {
 	KiroSessionID string   `json:"kiro_session_id,omitempty"`
 	BeforeIDs     string   `json:"before_ids,omitempty"`
 	Worktree      string   `json:"worktree,omitempty"`
+	Dir           string   `json:"dir,omitempty"`
 }
 
 // Response is the daemon's reply. OK is false and Error is set on any failure.

@@ -20,7 +20,7 @@ copy_dir() {
   done
 }
 
-copy_dir "$SCRIPT_DIR/skills" "$KIRO_DIR/skills"
+copy_dir "$SCRIPT_DIR/../internal/assets/skills" "$KIRO_DIR/skills"
 
 copy_files() {
   local src_dir="$1"
@@ -39,7 +39,7 @@ copy_files() {
   done
 }
 
-copy_files "$SCRIPT_DIR/agents" "$KIRO_DIR/agents" "*.json"
+copy_files "$SCRIPT_DIR/../internal/assets/agents" "$KIRO_DIR/agents" "*.json"
 
 copy_git_hooks() {
   local src_dir="$SCRIPT_DIR/git"

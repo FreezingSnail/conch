@@ -17,6 +17,9 @@ func main() {
 		case "notify":
 			runNotify(os.Args[2:])
 			return
+		case "escalate":
+			runEscalate(os.Args[2:])
+			return
 		case "task":
 			runTask(os.Args[2:])
 			return
@@ -51,6 +54,29 @@ func runNotify(args []string) {
 	}
 	if !resp.OK {
 		fmt.Fprintln(os.Stderr, "notify:", resp.Error)
+		os.Exit(1)
+	}
+}
+
+func runEscalate(args []string) {
+	fs := flag.NewFlagSet("escalate", flag.ExitOnError)
+	sessionID := fs.Int64("session-id", 0, "conch session ID to escalate")
+	fs.Parse(args) //nolint:errcheck
+	if *sessionID == 0 {
+		fmt.Fprintln(os.Stderr, "escalate: --session-id required")
+		os.Exit(1)
+	}
+	resp, err := client.Send(client.Request{
+		Action:    "update_session_status",
+		SessionID: *sessionID,
+		Status:    "needs_human",
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "escalate:", err)
+		os.Exit(1)
+	}
+	if !resp.OK {
+		fmt.Fprintln(os.Stderr, "escalate:", resp.Error)
 		os.Exit(1)
 	}
 }

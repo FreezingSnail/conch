@@ -325,13 +325,14 @@ func scanTasks(rows *sql.Rows) ([]Task, error) {
 
 // Session records a harness invocation, either interactive or background.
 type Session struct {
-	ID        int64
-	TicketID  int64
-	TaskID    int64
-	Harness   string
-	Status    string
-	StartedAt time.Time
-	EndedAt   *time.Time // Nil while the session is still running.
+	ID            int64
+	TicketID      int64
+	TaskID        int64
+	Harness       string
+	Status        string
+	KiroSessionID string // UUID of the kiro-cli ACP session, if linked.
+	StartedAt     time.Time
+	EndedAt       *time.Time // Nil while the session is still running.
 }
 
 // CreateSession inserts a new session record. Pass ticketID=0 when not linked to a ticket.
@@ -361,7 +362,7 @@ func (d *DB) UpdateSessionStatus(id int64, status string) error {
 }
 
 func (d *DB) ListSessions() ([]Session, error) {
-	rows, err := d.conn.Query(`SELECT id, COALESCE(ticket_id,0), COALESCE(task_id,0), harness, status, started_at, ended_at FROM sessions ORDER BY started_at DESC`)
+	rows, err := d.conn.Query(`SELECT id, COALESCE(ticket_id,0), COALESCE(task_id,0), harness, status, COALESCE(kiro_session_id,''), started_at, ended_at FROM sessions ORDER BY started_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -369,7 +370,7 @@ func (d *DB) ListSessions() ([]Session, error) {
 	var sessions []Session
 	for rows.Next() {
 		var s Session
-		if err := rows.Scan(&s.ID, &s.TicketID, &s.TaskID, &s.Harness, &s.Status, &s.StartedAt, &s.EndedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.TicketID, &s.TaskID, &s.Harness, &s.Status, &s.KiroSessionID, &s.StartedAt, &s.EndedAt); err != nil {
 			return nil, err
 		}
 		sessions = append(sessions, s)

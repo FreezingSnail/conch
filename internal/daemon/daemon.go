@@ -6,29 +6,36 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
-
 	"github.com/FreezingSnail/conch/internal/assets"
 	"github.com/FreezingSnail/conch/internal/client"
 	"github.com/FreezingSnail/conch/internal/config"
 	"github.com/FreezingSnail/conch/internal/db"
 	"github.com/FreezingSnail/conch/internal/git"
 	"github.com/FreezingSnail/conch/internal/kiro"
+	"io"
+	"net"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
+	"strings"
 )
 
-// seedKiroConfig writes the embedded lsp.json into <worktreePath>/.kiro/settings/lsp.json.
-// Non-fatal: worktree is still usable without it.
+// seedKiroConfig writes embedded kiro config files into the worktree.
+// Non-fatal: worktree is still usable without them.
 func seedKiroConfig(worktreePath string) {
-	dst := filepath.Join(worktreePath, ".kiro", "settings", "lsp.json")
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+	settingsDir := filepath.Join(worktreePath, ".kiro", "settings")
+	if err := os.MkdirAll(settingsDir, 0o755); err != nil {
 		return
 	}
-	os.WriteFile(dst, assets.KiroLSPConfig, 0o644) //nolint:errcheck
+	os.WriteFile(filepath.Join(settingsDir, "lsp.json"), assets.KiroLSPConfig, 0o644) //nolint:errcheck
+
+	agentsDir := filepath.Join(worktreePath, ".kiro", "agents")
+	if err := os.MkdirAll(agentsDir, 0o755); err != nil {
+		return
+	}
+	os.WriteFile(filepath.Join(agentsDir, "executor.json"), assets.KiroExecutorAgent, 0o644)       //nolint:errcheck
+	os.WriteFile(filepath.Join(agentsDir, "implementor.json"), assets.KiroImplementorAgent, 0o644) //nolint:errcheck
 }
 
 // SockAddr returns the canonical Unix socket path under $HOME/.conch.
@@ -501,6 +508,16 @@ func dispatch(req client.Request, database *db.DB) client.Response {
 		go runExecutor(sessionID, prompt, ticket.WorktreePath, database)
 		return client.Response{OK: true, ID: sessionID}
 
+	case "import_tasks":
+		if req.TicketID == 0 || req.Dir == "" {
+			return client.Response{Error: "ticket_id and dir required"}
+		}
+		tasks, err := importTasks(req.TicketID, req.Dir, database)
+		if err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		return client.Response{OK: true, Tasks: tasks}
+
 	default:
 		return client.Response{Error: "unknown action"}
 	}
@@ -540,6 +557,110 @@ func writeResp(w io.Writer, r client.Response) {
 	w.Write(b)
 }
 
+// importTasks walks dir for *.code-task.md files, creates tasks with an
+// augmented ## Tests section, and wires step-based dependencies.
+func importTasks(ticketID int64, dir string, database *db.DB) ([]db.Task, error) {
+	// Collect files grouped by step directory, sorted by path.
+	stepFiles := map[string][]string{}
+	var stepOrder []string
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(d.Name(), ".code-task.md") {
+			return err
+		}
+		step := filepath.Base(filepath.Dir(path))
+		if _, seen := stepFiles[step]; !seen {
+			stepOrder = append(stepOrder, step)
+		}
+		stepFiles[step] = append(stepFiles[step], path)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(stepOrder)
+	for _, step := range stepOrder {
+		sort.Strings(stepFiles[step])
+	}
+
+	// Create tasks, grouped by step so we can wire deps.
+	stepIDs := map[string][]int64{}
+	var all []db.Task
+	for _, step := range stepOrder {
+		for _, path := range stepFiles[step] {
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				return nil, err
+			}
+			title, body := parseCodeTask(string(raw))
+			augmented := body + "\n" + augmentTests(body)
+			id, err := database.CreateTaskWithBody(ticketID, title, augmented)
+			if err != nil {
+				return nil, err
+			}
+			stepIDs[step] = append(stepIDs[step], id)
+			all = append(all, db.Task{ID: id, TicketID: ticketID, Title: title, Body: augmented, Status: "todo"})
+		}
+	}
+
+	// Wire cross-step dependencies.
+	for i := 1; i < len(stepOrder); i++ {
+		prev, cur := stepOrder[i-1], stepOrder[i]
+		for _, blocker := range stepIDs[prev] {
+			for _, blocked := range stepIDs[cur] {
+				if err := database.AddDependency(blocker, blocked); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+	return all, nil
+}
+
+// parseCodeTask extracts the title from the `# Task: <title>` first line and
+// returns the remainder as the body.
+func parseCodeTask(content string) (title, body string) {
+	content = strings.TrimSpace(content)
+	idx := strings.Index(content, "\n")
+	if idx == -1 {
+		return strings.TrimPrefix(content, "# Task: "), ""
+	}
+	title = strings.TrimPrefix(strings.TrimSpace(content[:idx]), "# Task: ")
+	body = strings.TrimSpace(content[idx+1:])
+	return
+}
+
+// augmentTests derives a ## Tests section from the task body. It scans for
+// requirement lines and produces named test cases covering success, failure,
+// and any explicit edge cases.
+func augmentTests(body string) string {
+	var cases []string
+	for _, line := range strings.Split(body, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "- ") && !strings.HasPrefix(line, "* ") {
+			continue
+		}
+		text := strings.TrimPrefix(strings.TrimPrefix(line, "- "), "* ")
+		text = strings.TrimSpace(text)
+		if text == "" || strings.HasPrefix(text, "`") {
+			continue
+		}
+		words := strings.Fields(text)
+		if len(words) > 5 {
+			words = words[:5]
+		}
+		name := strings.ToLower(strings.Join(words, "_"))
+		name = strings.Map(func(r rune) rune {
+			if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' {
+				return r
+			}
+			return '_'
+		}, name)
+		cases = append(cases, fmt.Sprintf("- `test_%s`: given %s, expect success", name, text))
+	}
+	cases = append(cases, "- `test_invalid_input`: given missing or invalid input, expect error")
+	return "## Tests\n\n" + strings.Join(cases, "\n")
+}
+
 // runExecutor spawns a headless kiro executor in the ticket's worktree and
 // updates the session status when the process exits.
 func runExecutor(sessionID int64, prompt, worktreePath string, database *db.DB) {
@@ -561,6 +682,7 @@ func runExecutor(sessionID int64, prompt, worktreePath string, database *db.DB) 
 		return
 	}
 	cmd.Stderr = cmd.Stdout
+	beforeIDs := kiro.ListSessionIDs(worktreePath)
 	if err := cmd.Start(); err != nil {
 		database.UpdateSessionStatus(sessionID, "error")
 		database.AppendSessionLog(sessionID, "error", err.Error())
@@ -573,7 +695,11 @@ func runExecutor(sessionID int64, prompt, worktreePath string, database *db.DB) 
 	if err := cmd.Wait(); err != nil {
 		database.UpdateSessionStatus(sessionID, "error")
 		database.AppendSessionLog(sessionID, "exit_error", err.Error())
-		return
+	} else {
+		database.UpdateSessionStatus(sessionID, "completed")
 	}
-	database.UpdateSessionStatus(sessionID, "completed")
+	// Diff after exit — deterministic, no goroutine race.
+	if uuid := kiro.NewSessionID(beforeIDs, kiro.ListSessionIDs(worktreePath)); uuid != "" {
+		database.SetSessionKiroID(sessionID, uuid) //nolint:errcheck
+	}
 }
