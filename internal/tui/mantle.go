@@ -32,8 +32,7 @@ type mantleView struct {
 	rendered string // glamour-rendered content for display
 	title    string // reader title
 	scroll   int
-	height   int
-	w        int
+	w, h     int
 	// docs / settings loaded lazily
 	readme   string
 	settings string
@@ -54,6 +53,22 @@ type mantleLoadedMsg struct {
 }
 
 func newMantleView() mantleView { return mantleView{} }
+
+// Title implements Titler; used by the tab bar chrome.
+func (v mantleView) Title() string { return "Mantle" }
+
+// HelpLine implements Helper; returns context-sensitive keybinding hints.
+func (v mantleView) HelpLine() string {
+	if v.content != "" {
+		return "↑/↓ scroll  esc back"
+	}
+	switch v.section {
+	case mantleDocs, mantleSettings:
+		return "enter read  tab switch  esc back"
+	default:
+		return "↑/↓ navigate  enter read  tab switch  esc back"
+	}
+}
 
 func (v mantleView) Init() tea.Cmd {
 	return func() tea.Msg {
@@ -126,7 +141,7 @@ func readFileUpward(name string) string {
 func (v mantleView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		v.height = msg.Height - 6
+		v.h = msg.Height - 6
 		v.w = msg.Width
 	case mantleLoadedMsg:
 		v.agents = msg.agents
@@ -237,13 +252,14 @@ func (v mantleView) View() string {
 		return v.viewReader()
 	}
 
-	// tab bar
-	s := "  Mantle\n\n"
+	// Tab bar: active tab uses accent colour, inactive tabs are dimmed.
+	var s string
+	s += "  " + StyleTitle.Render("Mantle") + "\n\n"
 	for i, name := range mantleSectionNames {
 		if mantleSection(i) == v.section {
-			s += fmt.Sprintf("  [%s]", name)
+			s += StyleActiveTab.Render(" [" + name + "] ")
 		} else {
-			s += fmt.Sprintf("   %s ", name)
+			s += StyleInactiveTab.Render("  " + name + "  ")
 		}
 		if i < len(mantleSectionNames)-1 {
 			s += "  "
@@ -257,38 +273,36 @@ func (v mantleView) View() string {
 			s += "  no agents found\n"
 		} else {
 			for i, name := range v.agents {
-				cur := "  "
 				if i == v.cursor {
-					cur = "> "
+					s += StyleCursor.Render("> "+name) + "\n"
+				} else {
+					s += "  " + name + "\n"
 				}
-				s += fmt.Sprintf("%s%s\n", cur, name)
 			}
 		}
-		s += "\n  ↑/↓ navigate  enter read  tab switch  esc back\n"
 	case mantleDocs:
-		s += "  README.md\n\n  enter to read\n\n  tab switch  esc back\n"
+		s += "  " + StyleTitle.Render("README.md") + "\n\n  enter to read\n"
 	case mantleSettings:
-		s += "  conch config\n\n  enter to view\n\n  tab switch  esc back\n"
+		s += "  " + StyleTitle.Render("conch config") + "\n\n  enter to view\n"
 	case mantleSkills:
 		if len(v.skills) == 0 {
 			s += "  no skills found\n"
 		} else {
 			for i, name := range v.skills {
-				cur := "  "
 				if i == v.cursor {
-					cur = "> "
+					s += StyleCursor.Render("> "+name) + "\n"
+				} else {
+					s += "  " + name + "\n"
 				}
-				s += fmt.Sprintf("%s%s\n", cur, name)
 			}
 		}
-		s += "\n  ↑/↓ navigate  enter read  tab switch  esc back\n"
 	}
 	return s
 }
 
 func (v mantleView) viewReader() string {
 	lines := strings.Split(v.rendered, "\n")
-	pageH := v.height
+	pageH := v.h
 	if pageH < 5 {
 		pageH = 20
 	}
@@ -296,9 +310,9 @@ func (v mantleView) viewReader() string {
 	if end > len(lines) {
 		end = len(lines)
 	}
-	s := fmt.Sprintf("  Mantle — %s\n\n", v.title)
+	s := "  " + StyleTitle.Render("Mantle — "+v.title) + "\n\n"
 	s += strings.Join(lines[v.scroll:end], "\n")
-	s += fmt.Sprintf("\n\n  line %d/%d   ↑/↓ scroll  esc back\n", v.scroll+1, len(lines))
+	s += fmt.Sprintf("\n\n  line %d/%d\n", v.scroll+1, len(lines))
 	return s
 }
 

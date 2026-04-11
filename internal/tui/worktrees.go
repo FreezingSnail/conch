@@ -15,6 +15,7 @@ type worktreesView struct {
 	cursor  int
 	loaded  bool
 	status  string
+	w, h    int
 	// confirm state
 	confirming    bool
 	confirmMsg    string
@@ -26,6 +27,20 @@ type worktreesView struct {
 type worktreesLoadedMsg struct{ tickets []db.Ticket }
 
 func newWorktreesView() worktreesView { return worktreesView{} }
+
+// Title implements Titler.
+func (v worktreesView) Title() string { return "Worktrees" }
+
+// HelpLine implements Helper; returns context-sensitive keybinding hints.
+func (v worktreesView) HelpLine() string {
+	if v.output != "" {
+		return "any key to dismiss"
+	}
+	if v.confirming {
+		return "y confirm  any other key cancel"
+	}
+	return "s status  d diff  p push  R rebase  P open-pr  m merge  x delete  D hard-delete  S sync-all  r refresh  esc back"
+}
 
 func (v worktreesView) Init() tea.Cmd {
 	return v.load()
@@ -46,6 +61,9 @@ func (v worktreesView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case worktreesLoadedMsg:
 		v.tickets = msg.tickets
 		v.loaded = true
+
+	case tea.WindowSizeMsg:
+		v.w, v.h = msg.Width, msg.Height
 
 	case tea.KeyMsg:
 		// dismiss output overlay
@@ -185,33 +203,33 @@ func (v worktreesView) View() string {
 		for _, l := range lines {
 			s += "  " + l + "\n"
 		}
-		s += "\n  any key to dismiss\n"
 		return s
 	}
 
 	if v.confirming {
-		return fmt.Sprintf("  Worktrees\n\n  %s\n", v.confirmMsg)
+		// Use StyleError colour to draw attention to the destructive prompt.
+		return StyleError.Render("  "+v.confirmMsg) + "\n"
 	}
 
 	if !v.loaded {
-		return "  Worktrees\n\n  loading...\n"
+		return "  loading...\n"
 	}
 
-	s := "  Worktrees\n\n"
+	s := ""
 	if len(v.tickets) == 0 {
 		s += "  no active worktrees\n"
 	} else {
 		for i, t := range v.tickets {
-			cursor := "  "
+			row := fmt.Sprintf("[%d] %s  %s", t.ID, t.Title, filepath.Base(t.WorktreePath))
 			if i == v.cursor {
-				cursor = "> "
+				s += StyleCursor.Render("> "+row) + "\n"
+			} else {
+				s += "  " + row + "\n"
 			}
-			s += fmt.Sprintf("%s[%d] %s  %s\n", cursor, t.ID, t.Title, filepath.Base(t.WorktreePath))
 		}
 	}
 	if v.status != "" {
-		s += "\n  " + v.status + "\n"
+		s += "\n" + statusLine(v.status)
 	}
-	s += "\n  s status  d diff  p push  R rebase  P open-pr  m merge  x delete  D hard-delete  S sync-all  r refresh  esc back\n"
 	return s
 }
