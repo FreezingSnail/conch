@@ -18,12 +18,23 @@ type repoPickerView struct {
 	title    string
 	typing   bool
 	status   string
-	width    int
+	w, h     int
 }
 
 type reposLoadedMsg struct{ repos []string }
 
 func newRepoPickerView() repoPickerView { return repoPickerView{} }
+
+// Title implements Titler.
+func (v repoPickerView) Title() string { return "New Ticket" }
+
+// HelpLine implements Helper; returns context-sensitive keybinding hints.
+func (v repoPickerView) HelpLine() string {
+	if v.typing {
+		return "enter to create  esc to cancel"
+	}
+	return "enter select  esc back"
+}
 
 func (v repoPickerView) Init() tea.Cmd {
 	return func() tea.Msg {
@@ -42,7 +53,7 @@ func (v repoPickerView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		v.loaded = true
 
 	case tea.WindowSizeMsg:
-		v.width = msg.Width
+		v.w, v.h = msg.Width, msg.Height
 
 	case tea.KeyMsg:
 		if !v.loaded {
@@ -108,32 +119,40 @@ func (v repoPickerView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (v repoPickerView) View() string {
 	if !v.loaded {
-		return "  New Ticket\n\n  loading repos...\n"
+		return "  loading repos...\n"
 	}
 	if len(v.repos) == 0 {
-		return "  New Ticket\n\n  no repos found — run conch init to configure work dirs\n\n  esc back\n"
+		return "  no repos found — run conch init to configure work dirs\n"
 	}
 	if v.typing {
 		s := fmt.Sprintf("  New Ticket — %s\n\n", filepath.Base(v.selected))
-		s += wrapInput("Title: ", v.title, v.width) + "\n\n"
+		s += wrapInput("Title: ", v.title, v.w) + "\n"
 		if v.status != "" {
-			s += "  " + v.status + "\n\n"
+			s += "\n" + statusLine(v.status)
 		}
-		s += "  enter to create  esc to cancel\n"
 		return s
 	}
 
-	s := "  New Ticket — pick a repo\n\n"
+	s := "  pick a repo\n\n"
 	for i, r := range v.repos {
-		cursor := "  "
+		row := filepath.Base(r)
 		if i == v.cursor {
-			cursor = "> "
+			s += StyleCursor.Render("> "+row) + "\n"
+		} else {
+			s += "  " + row + "\n"
 		}
-		s += fmt.Sprintf("%s%s\n", cursor, filepath.Base(r))
 	}
 	if v.status != "" {
-		s += "\n  " + v.status + "\n"
+		s += "\n" + statusLine(v.status)
 	}
-	s += "\n  enter select  esc back\n"
 	return s
+}
+
+// statusLine renders a status string with StyleError or StyleSuccess based on
+// whether it starts with "error".
+func statusLine(s string) string {
+	if strings.HasPrefix(s, "error") {
+		return "  " + StyleError.Render(s) + "\n"
+	}
+	return "  " + StyleSuccess.Render(s) + "\n"
 }

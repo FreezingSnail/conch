@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/FreezingSnail/conch/internal/client"
@@ -34,6 +35,7 @@ type burrowView struct {
 	confirmID  int64
 	viewingLog bool
 	polling    bool // true while a logPollCmd loop is active
+	w, h       int
 }
 
 type burrowLoadedMsg struct {
@@ -78,6 +80,14 @@ func loadSessionsAndLogs(ticketID int64) tea.Cmd {
 }
 
 func newBurrowView() burrowView { return burrowView{} }
+
+// Title implements Titler; used by the tab bar chrome.
+func (v burrowView) Title() string { return "Burrow" }
+
+// HelpLine implements Helper; returns context-sensitive keybinding hints.
+func (v burrowView) HelpLine() string {
+	return "tab switch tabs  ↑/↓ navigate  enter start  D delete  r refresh  esc back"
+}
 
 func (v burrowView) Init() tea.Cmd { return loadBurrow }
 
@@ -165,6 +175,9 @@ func (v burrowView) tabTickets() []db.Ticket {
 
 func (v burrowView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		v.w, v.h = msg.Width, msg.Height
+
 	case burrowLoadedMsg:
 		if msg.err != "" {
 			v.status = "error: " + msg.err
@@ -425,40 +438,39 @@ func (v burrowView) View() string {
 		return s
 	}
 
-	s := "  Burrow 🐌\n\n"
+	var b strings.Builder
 
-	// Tab bar
+	// Tab bar: active tab uses accent colour, inactive tabs are dimmed.
 	for i, name := range burrowTabNames {
 		if burrowTab(i) == v.tab {
-			s += fmt.Sprintf("  [%s]", name)
+			b.WriteString(StyleActiveTab.Render(" [" + name + "] "))
 		} else {
-			s += fmt.Sprintf("   %s ", name)
-		}
-		if i < len(burrowTabNames)-1 {
-			s += "  "
+			b.WriteString(StyleInactiveTab.Render("  " + name + "  "))
 		}
 	}
-	s += "\n\n"
+	b.WriteString("\n\n")
 
 	if v.confirming {
-		return s + fmt.Sprintf("  hard delete ticket #%d? [y/n]\n", v.confirmID)
+		b.WriteString(StyleError.Render(fmt.Sprintf("  hard delete ticket #%d? [y/n]", v.confirmID)) + "\n")
+		return b.String()
 	}
 
 	if !v.loaded {
-		return s + "  loading...\n"
+		b.WriteString("  loading...\n")
+		return b.String()
 	}
 
 	visible := v.tabTickets()
 	if len(visible) == 0 {
-		s += "  nothing here yet\n"
+		b.WriteString("  nothing here yet\n")
 	} else {
-		s += fmt.Sprintf("  %-14s  %-28s  %-18s  %s\n", "TICKET", "DESCRIPTION", "REPO", "TASKS")
-		s += fmt.Sprintf("  %-14s  %-28s  %-18s  %s\n", "------", "-----------", "----", "-----")
+		// Header row in bold.
+		header := fmt.Sprintf("  %-14s  %-28s  %-18s  %s", "TICKET", "DESCRIPTION", "REPO", "TASKS")
+		b.WriteString(StyleTitle.Render(header) + "\n")
+		sep := fmt.Sprintf("  %-14s  %-28s  %-18s  %s", "------", "-----------", "----", "-----")
+		b.WriteString(StyleTitle.Render(sep) + "\n")
+
 		for i, t := range visible {
-			cursor := "  "
-			if i == v.cursor {
-				cursor = "> "
-			}
 			num := t.TicketNumber
 			if num == "" {
 				num = fmt.Sprintf("#%d", t.ID)
@@ -478,18 +490,30 @@ func (v burrowView) View() string {
 			} else if st == "error" {
 				tasks += " (error)"
 			}
-			s += fmt.Sprintf("%s%-14s  %-28s  %-18s  %s\n", cursor, num, desc, repo, tasks)
+			row := fmt.Sprintf("> %-14s  %-28s  %-18s  %s", num, desc, repo, tasks)
+			plain := fmt.Sprintf("  %-14s  %-28s  %-18s  %s", num, desc, repo, tasks)
+			if i == v.cursor {
+				b.WriteString(StyleCursor.Render(row) + "\n")
+			} else {
+				b.WriteString(plain + "\n")
+			}
 		}
 	}
 
 	if v.status != "" {
-		s += "\n  " + v.status + "\n"
+		b.WriteString("\n")
+		// Distinguish error vs success status by prefix convention.
+		if len(v.status) >= 5 && v.status[:5] == "error" {
+			b.WriteString("  " + StyleError.Render(v.status) + "\n")
+		} else {
+			b.WriteString("  " + StyleSuccess.Render(v.status) + "\n")
+		}
 	}
 
 	// Session log panel
-	s += "\n  ── session log ──────────────────────────────────────────\n"
+	b.WriteString("\n  ── session log ──────────────────────────────────────────\n")
 	if len(v.logLines) == 0 {
-		s += "  (no logs)\n"
+		b.WriteString("  (no logs)\n")
 	} else {
 		// show last 10 lines
 		start := len(v.logLines) - 10
@@ -497,10 +521,10 @@ func (v burrowView) View() string {
 			start = 0
 		}
 		for _, line := range v.logLines[start:] {
-			s += "  " + line + "\n"
+			b.WriteString("  " + line + "\n")
 		}
 	}
 
-	s += "\n  tab switch tabs  ↑/↓ navigate  enter start  l log  x kill  D delete  r refresh  esc back\n"
-	return s
+	b.WriteString("\n  tab switch tabs  ↑/↓ navigate  enter start  l log  x kill  D delete  r refresh  esc back\n")
+	return b.String()
 }
