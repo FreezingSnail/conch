@@ -22,18 +22,25 @@ const (
 // diffView is a three-panel viewer: commits (left), diff hunks (center),
 // and feedback notes for the selected hunk (right). It is pushed from
 // feedbackView when the user presses enter on a ticket.
+//
+// When editing=true the right panel shows an inline textarea. editNoteID==0
+// means a new note is being created; non-zero means an existing note is being
+// updated. noteCur is the cursor within the notes list for the current hunk.
 type diffView struct {
-	ticket    db.Ticket
-	commits   []git.Commit
-	commitCur int
-	hunks     []git.DiffHunk
-	hunkCur   int
-	allNotes  map[string][]db.FeedbackNote // keyed by hunkKey
-	focus     diffFocus
-	editing   bool // stub; wired in task 17
-	loaded    bool
-	status    string
-	w, h      int
+	ticket     db.Ticket
+	commits    []git.Commit
+	commitCur  int
+	hunks      []git.DiffHunk
+	hunkCur    int
+	allNotes   map[string][]db.FeedbackNote // keyed by hunkKey
+	focus      diffFocus
+	editing    bool
+	editText   string
+	editNoteID int64 // 0 = new note; non-zero = update existing
+	noteCur    int   // cursor within the notes list for the current hunk
+	loaded     bool
+	status     string
+	w, h       int
 }
 
 // diffLoadedMsg carries the initial commit list after Init fires.
@@ -123,38 +130,173 @@ func (v diffView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			v.status = "error: " + msg.err
 			return v, nil
 		}
-		v.hunks = msg.hunks
+		// A nil hunks slice signals a notes-only reload (after a mutation);
+		// preserve the existing hunk list in that case.
+		if msg.hunks != nil {
+			v.hunks = msg.hunks
+			v.hunkCur = 0
+		}
 		v.allNotes = msg.allNotes
-		v.hunkCur = 0
 		v.status = ""
 
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "esc", "q":
-			return v, pop()
-		case "h", "left":
-			if v.focus > focusLeft {
-				v.focus--
-			}
-		case "l", "right":
-			if v.focus < focusRight {
-				v.focus++
-			}
-		case "j", "down":
-			v = v.cursorDown()
-		case "k", "up":
-			v = v.cursorUp()
-		case "enter":
-			if v.focus == focusLeft && len(v.commits) > 0 {
-				c := v.commits[v.commitCur]
-				return v, loadHunksCmd(v.ticket.WorktreePath, c.Hash, v.ticket.ID)
-			}
-		case "n":
-			// Stub: task 17 will wire the inline note editor.
-			v.editing = true
+		if v.editing {
+			return v.updateEditing(msg)
+		}
+		return v.updateNormal(msg)
+	}
+	return v, nil
+}
+
+// updateEditing handles key events while the inline note editor is open.
+// Printable runes accumulate into editText; enter saves; esc cancels.
+func (v diffView) updateEditing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		v.editing = false
+		v.editText = ""
+		v.editNoteID = 0
+	case "backspace":
+		if len(v.editText) > 0 {
+			v.editText = v.editText[:len(v.editText)-1]
+		}
+	case "enter":
+		cmd := v.saveNoteCmd()
+		// Clear editor state on the returned model; saveNoteCmd captures the
+		// pre-clear values it needs via closure before this point.
+		v.editing = false
+		v.editText = ""
+		v.editNoteID = 0
+		return v, cmd
+	default:
+		// Append printable runes only.
+		if len(msg.Runes) > 0 {
+			v.editText += string(msg.Runes)
 		}
 	}
 	return v, nil
+}
+
+// saveNoteCmd builds the IPC command to create or update a note, then reloads
+// all notes for the current commit. editNoteID==0 triggers create; non-zero triggers update.
+// The caller is responsible for clearing editing state on the returned model.
+func (v diffView) saveNoteCmd() tea.Cmd {
+	// Capture values needed inside the closure.
+	noteID := v.editNoteID
+	body := v.editText
+	ticketID := v.ticket.ID
+
+	var commitHash, filePath, hunkHeader string
+	if len(v.commits) > 0 {
+		commitHash = v.commits[v.commitCur].Hash
+	}
+	if len(v.hunks) > 0 && v.hunkCur < len(v.hunks) {
+		filePath = v.hunks[v.hunkCur].FilePath
+		hunkHeader = v.hunks[v.hunkCur].HunkHeader
+	}
+
+	return func() tea.Msg {
+		if noteID == 0 {
+			client.Send(client.Request{ //nolint:errcheck
+				Action:     "create_feedback_note",
+				TicketID:   ticketID,
+				CommitHash: commitHash,
+				FilePath:   filePath,
+				HunkHeader: hunkHeader,
+				NoteBody:   body,
+			})
+		} else {
+			client.Send(client.Request{ //nolint:errcheck
+				Action:   "update_feedback_note",
+				NoteID:   noteID,
+				NoteBody: body,
+			})
+		}
+		// Reload notes after mutation.
+		nr, err := client.Send(client.Request{Action: "list_feedback_notes", TicketID: ticketID})
+		allNotes := make(map[string][]db.FeedbackNote)
+		if err == nil && nr.OK {
+			for _, n := range nr.FeedbackNotes {
+				k := n.FilePath + "\x00" + n.HunkHeader
+				allNotes[k] = append(allNotes[k], n)
+			}
+		}
+		return diffHunksMsg{hunks: nil, allNotes: allNotes}
+	}
+}
+
+// updateNormal handles key events when the editor is closed.
+func (v diffView) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "q":
+		return v, pop()
+	case "h", "left":
+		if v.focus > focusLeft {
+			v.focus--
+		}
+	case "l", "right":
+		if v.focus < focusRight {
+			v.focus++
+		}
+	case "j", "down":
+		v = v.cursorDown()
+	case "k", "up":
+		v = v.cursorUp()
+	case "enter":
+		if v.focus == focusLeft && len(v.commits) > 0 {
+			c := v.commits[v.commitCur]
+			return v, loadHunksCmd(v.ticket.WorktreePath, c.Hash, v.ticket.ID)
+		}
+	case "n":
+		// Open editor for a new note on the current hunk (available from any focus).
+		v.editing = true
+		v.editNoteID = 0
+		v.editText = ""
+	case "e":
+		// Edit the note under noteCur in the right panel.
+		if v.focus == focusRight {
+			notes := v.currentNotes()
+			if v.noteCur < len(notes) {
+				n := notes[v.noteCur]
+				v.editing = true
+				v.editNoteID = n.ID
+				v.editText = n.Body
+			}
+		}
+	case "d":
+		// Delete the note under noteCur in the right panel.
+		if v.focus == focusRight {
+			notes := v.currentNotes()
+			if v.noteCur < len(notes) {
+				noteID := notes[v.noteCur].ID
+				ticketID := v.ticket.ID
+				return v, func() tea.Msg {
+					client.Send(client.Request{ //nolint:errcheck
+						Action: "delete_feedback_note",
+						NoteID: noteID,
+					})
+					nr, err := client.Send(client.Request{Action: "list_feedback_notes", TicketID: ticketID})
+					allNotes := make(map[string][]db.FeedbackNote)
+					if err == nil && nr.OK {
+						for _, n := range nr.FeedbackNotes {
+							k := n.FilePath + "\x00" + n.HunkHeader
+							allNotes[k] = append(allNotes[k], n)
+						}
+					}
+					return diffHunksMsg{allNotes: allNotes}
+				}
+			}
+		}
+	}
+	return v, nil
+}
+
+// currentNotes returns the notes slice for the currently selected hunk.
+func (v diffView) currentNotes() []db.FeedbackNote {
+	if len(v.hunks) == 0 || v.hunkCur >= len(v.hunks) {
+		return nil
+	}
+	return v.allNotes[hunkKey(v.hunks[v.hunkCur])]
 }
 
 // cursorDown advances the cursor in the focused panel.
@@ -167,6 +309,11 @@ func (v diffView) cursorDown() diffView {
 	case focusCenter:
 		if v.hunkCur < len(v.hunks)-1 {
 			v.hunkCur++
+		}
+	case focusRight:
+		notes := v.currentNotes()
+		if v.noteCur < len(notes)-1 {
+			v.noteCur++
 		}
 	}
 	return v
@@ -182,6 +329,10 @@ func (v diffView) cursorUp() diffView {
 	case focusCenter:
 		if v.hunkCur > 0 {
 			v.hunkCur--
+		}
+	case focusRight:
+		if v.noteCur > 0 {
+			v.noteCur--
 		}
 	}
 	return v
@@ -275,21 +426,31 @@ func (v diffView) renderCenter(w int) string {
 }
 
 // renderRight renders the notes panel for the currently selected hunk.
+// When editing=true it shows an inline bordered textarea instead of the note list.
 func (v diffView) renderRight(w int) string {
 	var b strings.Builder
 	b.WriteString(StyleTitle.Width(w).Render("Notes") + "\n")
 
-	var notes []db.FeedbackNote
-	if len(v.hunks) > 0 && v.hunkCur < len(v.hunks) {
-		notes = v.allNotes[hunkKey(v.hunks[v.hunkCur])]
+	if v.editing {
+		// Inline editor: bordered text area with the current editText and a hint line.
+		inner := v.editText + "█" // block cursor
+		b.WriteString(StyleBorder.Width(w-2).Render(inner) + "\n")
+		b.WriteString(StyleBody.Width(w).Render("  [enter save  esc cancel]") + "\n")
+		return b.String()
 	}
 
-	for _, n := range notes {
+	notes := v.currentNotes()
+	for i, n := range notes {
 		body := n.Body
-		if len(body) > w-2 {
-			body = body[:w-2]
+		if len(body) > w-4 {
+			body = body[:w-4]
 		}
-		b.WriteString(StyleBody.Width(w).Render("  "+body) + "\n")
+		line := "  " + body
+		if i == v.noteCur && v.focus == focusRight {
+			b.WriteString(StyleCursor.Width(w).Render("> "+body) + "\n")
+		} else {
+			b.WriteString(StyleBody.Width(w).Render(line) + "\n")
+		}
 	}
 	if len(notes) == 0 {
 		b.WriteString(StyleBody.Width(w).Render("  no notes") + "\n")
