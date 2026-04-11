@@ -1,66 +1,42 @@
-// Package tui is the BubbleTea root model implementing a push/pop navigation stack.
+// Package tui is the BubbleTea root model. Navigation is tab-based; each tab
+// has its own push/pop stack. See tabsModel for the core logic.
 package tui
 
-import (
-	tea "github.com/charmbracelet/bubbletea"
-)
+import tea "github.com/charmbracelet/bubbletea"
 
-// Root holds a stack of models; the top is the active view.
-// Push/pop are driven by pushMsg/popMsg returned from views via push and pop.
+// Root is the top-level BubbleTea model. It delegates all behaviour to
+// tabsModel so that the program entry point only needs to know about Root.
 type Root struct {
-	stack []tea.Model
+	tabs tabsModel
 }
 
+// New returns a Root with a single "menu" tab.
 func New() Root {
-	return Root{stack: []tea.Model{newMenu()}}
+	return Root{tabs: newTabsModel()}
 }
 
-func (r Root) Init() tea.Cmd {
-	return r.top().Init()
-}
+func (r Root) Init() tea.Cmd { return r.tabs.Init() }
 
 func (r Root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case pushMsg:
-		r.stack = append(r.stack, msg.model)
-		return r, msg.model.Init()
-	case popMsg:
-		if len(r.stack) > 1 {
-			r.stack = r.stack[:len(r.stack)-1]
-		} else {
-			return r, tea.Quit
-		}
-		return r, nil
-	case tea.KeyMsg:
-		if msg.String() == "ctrl+c" {
-			return r, tea.Quit
-		}
-	}
-	updated, cmd := r.top().Update(msg)
-	r.stack[len(r.stack)-1] = updated
+	updated, cmd := r.tabs.Update(msg)
+	r.tabs = updated.(tabsModel)
 	return r, cmd
 }
 
-func (r Root) View() string {
-	return r.top().View()
-}
+func (r Root) View() string { return r.tabs.View() }
 
-func (r Root) top() tea.Model {
-	return r.stack[len(r.stack)-1]
-}
-
-// pushMsg pushes a new view onto the stack.
+// pushMsg pushes a new view onto the active tab's stack.
 type pushMsg struct{ model tea.Model }
 
-// popMsg pops the current view.
+// popMsg pops the current view from the active tab's stack.
 type popMsg struct{}
 
-// push returns a tea.Cmd that navigates to m by pushing it onto the stack.
+// push returns a Cmd that navigates to m by pushing it onto the active stack.
 func push(m tea.Model) tea.Cmd {
 	return func() tea.Msg { return pushMsg{model: m} }
 }
 
-// pop returns a tea.Cmd that navigates back by popping the current view.
+// pop returns a Cmd that navigates back by popping the current view.
 func pop() tea.Cmd {
 	return func() tea.Msg { return popMsg{} }
 }
