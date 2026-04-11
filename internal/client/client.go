@@ -42,16 +42,17 @@ type Request struct {
 
 // Response is the daemon's reply. OK is false and Error is set on any failure.
 type Response struct {
-	OK        bool         `json:"ok"`
-	Error     string       `json:"error,omitempty"`
-	Sessions  []db.Session `json:"sessions,omitempty"`
-	Tickets   []db.Ticket  `json:"tickets,omitempty"`
-	Tasks     []db.Task    `json:"tasks,omitempty"`
-	Task      *db.Task     `json:"task,omitempty"`
-	ID        int64        `json:"id,omitempty"`
-	SessionID int64        `json:"session_id,omitempty"`
-	Repos     []string     `json:"repos,omitempty"`
-	Lines     []string     `json:"lines,omitempty"`
+	OK          bool            `json:"ok"`
+	Error       string          `json:"error,omitempty"`
+	Sessions    []db.Session    `json:"sessions,omitempty"`
+	SessionLogs []db.SessionLog `json:"session_logs,omitempty"`
+	Tickets     []db.Ticket     `json:"tickets,omitempty"`
+	Tasks       []db.Task       `json:"tasks,omitempty"`
+	Task        *db.Task        `json:"task,omitempty"`
+	ID          int64           `json:"id,omitempty"`
+	SessionID   int64           `json:"session_id,omitempty"`
+	Repos       []string        `json:"repos,omitempty"`
+	Lines       []string        `json:"lines,omitempty"`
 }
 
 // Send dials the socket, writes one JSON line, and reads one JSON line back.

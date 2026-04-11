@@ -106,6 +106,16 @@ func dispatch(req client.Request, database *db.DB) client.Response {
 		}
 		return client.Response{OK: true, Sessions: sessions}
 
+	case "list_session_logs":
+		if req.SessionID == 0 {
+			return client.Response{Error: "session_id required"}
+		}
+		logs, err := database.ListSessionLogs(req.SessionID)
+		if err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		return client.Response{OK: true, SessionLogs: logs}
+
 	case "list_tickets":
 		tickets, err := database.ListTickets()
 		if err != nil {
@@ -408,6 +418,15 @@ func dispatch(req client.Request, database *db.DB) client.Response {
 		}
 		return client.Response{OK: true}
 
+	case "kill_session":
+		if req.SessionID == 0 {
+			return client.Response{Error: "session_id required"}
+		}
+		if err := database.UpdateSessionStatus(req.SessionID, "error"); err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		return client.Response{OK: true}
+
 	case "update_session_status":
 		if req.SessionID == 0 || req.Status == "" {
 			return client.Response{Error: "session_id and status required"}
@@ -511,11 +530,32 @@ func writeResp(w io.Writer, r client.Response) {
 // runExecutor spawns a headless kiro executor in the ticket's worktree and
 // updates the session status when the process exits.
 func runExecutor(sessionID int64, prompt, worktreePath string, database *db.DB) {
+	agentPath := filepath.Join(os.Getenv("HOME"), ".kiro", "agents", "executor.json")
+	if _, err := os.Stat(agentPath); err != nil {
+		database.AppendSessionLog(sessionID, "error", "executor agent not found: run tooling/link.sh")
+		database.UpdateSessionStatus(sessionID, "error")
+		return
+	}
 	cmd := kiro.Kiro{}.BackgroundWithAgent("executor", prompt, worktreePath)
+	// Ensure conch binary is findable. The daemon may be launched without the
+	// user's full PATH. Prepend the Go bin dir and the daemon's own dir.
+	goBin := filepath.Join(os.Getenv("HOME"), "go", "bin")
+	selfDir := filepath.Dir(os.Args[0])
+	cmd.Env = append(os.Environ(), "PATH="+goBin+":"+selfDir+":"+os.Getenv("PATH"))
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		database.UpdateSessionStatus(sessionID, "error")
+		return
+	}
+	cmd.Stderr = cmd.Stdout
 	if err := cmd.Start(); err != nil {
 		database.UpdateSessionStatus(sessionID, "error")
 		database.AppendSessionLog(sessionID, "error", err.Error())
 		return
+	}
+	scanner := bufio.NewScanner(stdout)
+	for scanner.Scan() {
+		database.AppendSessionLog(sessionID, "stdout", scanner.Text())
 	}
 	if err := cmd.Wait(); err != nil {
 		database.UpdateSessionStatus(sessionID, "error")

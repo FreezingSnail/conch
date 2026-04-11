@@ -384,3 +384,33 @@ func (d *DB) AppendSessionLog(sessionID int64, event, payload string) error {
 	)
 	return err
 }
+
+// SessionLog is a single log line emitted by a background session.
+type SessionLog struct {
+	ID        int64
+	SessionID int64
+	Event     string
+	Payload   string
+	CreatedAt time.Time
+}
+
+// ListSessionLogs returns all log lines for the given session, oldest first.
+func (d *DB) ListSessionLogs(sessionID int64) ([]SessionLog, error) {
+	rows, err := d.conn.Query(
+		`SELECT id, session_id, event, payload, created_at FROM session_logs WHERE session_id=? ORDER BY created_at ASC`,
+		sessionID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var logs []SessionLog
+	for rows.Next() {
+		var l SessionLog
+		if err := rows.Scan(&l.ID, &l.SessionID, &l.Event, &l.Payload, &l.CreatedAt); err != nil {
+			return nil, err
+		}
+		logs = append(logs, l)
+	}
+	return logs, nil
+}
