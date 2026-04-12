@@ -195,16 +195,24 @@ func (d *DB) ListWorktreesByTicket(ticketID int64) ([]Worktree, error) {
 		}
 		wts = append(wts, w)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return wts, nil
 }
 
-// DeleteTicket hard-deletes a ticket and all associated worktrees rows.
+// DeleteTicket hard-deletes a ticket and all associated tasks, feedback notes, and worktrees rows.
 func (d *DB) DeleteTicket(id int64) error {
-	_, err := d.conn.Exec(`DELETE FROM worktrees WHERE ticket_id=?`, id)
-	if err != nil {
-		return err
+	for _, stmt := range []string{
+		`DELETE FROM tasks WHERE ticket_id=?`,
+		`DELETE FROM feedback_notes WHERE ticket_id=?`,
+		`DELETE FROM worktrees WHERE ticket_id=?`,
+	} {
+		if _, err := d.conn.Exec(stmt, id); err != nil {
+			return err
+		}
 	}
-	_, err = d.conn.Exec(`DELETE FROM tickets WHERE id=?`, id)
+	_, err := d.conn.Exec(`DELETE FROM tickets WHERE id=?`, id)
 	return err
 }
 
@@ -239,6 +247,9 @@ func (d *DB) ListTickets() ([]Ticket, error) {
 			return nil, err
 		}
 		tickets = append(tickets, t)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return tickets, nil
 }
@@ -353,6 +364,9 @@ func scanTasks(rows *sql.Rows) ([]Task, error) {
 		}
 		tasks = append(tasks, t)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return tasks, nil
 }
 
@@ -379,21 +393,17 @@ func (d *DB) GetSessionByID(id int64) (Session, error) {
 	return s, err
 }
 
-// CreateSession inserts a new session record. Pass ticketID=0 when not linked to a ticket.
+// CreateSession inserts a new session record. Pass ticketID=0 when not linked to a ticket;
+// the ticket_id column will be stored as NULL.
 func (d *DB) CreateSession(ticketID int64, harness, status string) (int64, error) {
-	var res sql.Result
-	var err error
-	if ticketID == 0 {
-		res, err = d.conn.Exec(
-			`INSERT INTO sessions (harness, status, started_at) VALUES (?, ?, ?)`,
-			harness, status, time.Now(),
-		)
-	} else {
-		res, err = d.conn.Exec(
-			`INSERT INTO sessions (ticket_id, harness, status, started_at) VALUES (?, ?, ?, ?)`,
-			ticketID, harness, status, time.Now(),
-		)
+	var tid *int64
+	if ticketID != 0 {
+		tid = &ticketID
 	}
+	res, err := d.conn.Exec(
+		`INSERT INTO sessions (ticket_id, harness, status, started_at) VALUES (?, ?, ?, ?)`,
+		tid, harness, status, time.Now(),
+	)
 	if err != nil {
 		return 0, err
 	}
@@ -418,6 +428,9 @@ func (d *DB) ListSessions() ([]Session, error) {
 			return nil, err
 		}
 		sessions = append(sessions, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return sessions, nil
 }
@@ -456,6 +469,9 @@ func (d *DB) ListSessionLogs(sessionID int64) ([]SessionLog, error) {
 			return nil, err
 		}
 		logs = append(logs, l)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return logs, nil
 }
@@ -553,6 +569,9 @@ func scanFeedbackNotes(rows *sql.Rows) ([]FeedbackNote, error) {
 		}
 		n.Addressed = addressed == 1
 		notes = append(notes, n)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return notes, nil
 }
@@ -714,6 +733,9 @@ func scanPRs(rows *sql.Rows) ([]PullRequest, error) {
 		}
 		prs = append(prs, pr)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return prs, nil
 }
 
@@ -728,6 +750,9 @@ func scanPRComments(rows *sql.Rows) ([]PRReviewComment, error) {
 		c.Approved = approved == 1
 		c.Pushed = pushed == 1
 		comments = append(comments, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return comments, nil
 }

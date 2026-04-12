@@ -345,3 +345,84 @@ func TestPRCommentCRUD(t *testing.T) {
 		t.Fatal("expected comment to be pushed")
 	}
 }
+
+// TestDeleteTicket_cascades verifies that deleting a ticket also removes its tasks and feedback notes.
+func TestDeleteTicket_cascades(t *testing.T) {
+	d := openTestDB(t)
+
+	ticketID, err := d.CreateTicket("T-1", "cascade test", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := d.CreateTask(ticketID, "task one"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.CreateFeedbackNote(ticketID, "abc", "f.go", "@@ -1 @@", "note"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := d.DeleteTicket(ticketID); err != nil {
+		t.Fatal(err)
+	}
+
+	tasks, err := d.ListTasksByTicket(ticketID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 0 {
+		t.Fatalf("expected 0 tasks after cascade delete, got %d", len(tasks))
+	}
+
+	notes, err := d.ListFeedbackNotesByTicket(ticketID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(notes) != 0 {
+		t.Fatalf("expected 0 feedback notes after cascade delete, got %d", len(notes))
+	}
+}
+
+// TestCreateSession_nullTicket verifies that CreateSession(0, ...) stores NULL ticket_id
+// and GetSessionByID returns TicketID==0.
+func TestCreateSession_nullTicket(t *testing.T) {
+	d := openTestDB(t)
+
+	id, err := d.CreateSession(0, "kiro", "running")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := d.GetSessionByID(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.TicketID != 0 {
+		t.Fatalf("expected TicketID==0, got %d", s.TicketID)
+	}
+}
+
+// TestWorktreeCRUD verifies CreateWorktree and ListWorktreesByTicket round-trip correctly.
+func TestWorktreeCRUD(t *testing.T) {
+	d := openTestDB(t)
+
+	ticketID, err := d.CreateTicket("T-1", "wt test", "", "repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := d.CreateWorktree(ticketID, "repo", "/tmp/wt/1"); err != nil {
+		t.Fatal(err)
+	}
+
+	wts, err := d.ListWorktreesByTicket(ticketID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wts) != 1 {
+		t.Fatalf("expected 1 worktree, got %d", len(wts))
+	}
+	if wts[0].TicketID != ticketID || wts[0].Repo != "repo" || wts[0].WorktreePath != "/tmp/wt/1" {
+		t.Fatalf("unexpected worktree: %+v", wts[0])
+	}
+}
