@@ -28,29 +28,24 @@ type Harness interface {
 // InTmux reports whether the current process is running inside a tmux session.
 func InTmux() bool { return os.Getenv("TMUX") != "" }
 
-// JoinIDs joins a slice of session IDs into the comma-separated string used by
-// the notify callback.
-func JoinIDs(ids []string) string { return strings.Join(ids, ",") }
-
 // SpawnTmuxPane opens a new tmux pane running h, then calls back to the conch
 // daemon via `conch notify` when the harness exits.
 // agent and prompt may be empty to launch the interactive session picker.
-func SpawnTmuxPane(h Harness, agent, prompt, dir string, sessionID int64, beforeIDs string) error {
-	notify := fmt.Sprintf("conch notify --session-id %d --worktree %q --before-ids %q",
-		sessionID, dir, beforeIDs)
+func SpawnTmuxPane(h Harness, agent, prompt, dir string, sessionID int64) error {
+	notify := fmt.Sprintf("conch notify --session-id %d --worktree %q", sessionID, dir)
 	shellCmd := fmt.Sprintf("cd %q && %s; %s", dir, h.CLICommand(agent, prompt), notify)
 	return exec.Command("tmux", "split-window", "-h", shellCmd).Run()
 }
 
 // SpawnTmuxWindow opens a new named tmux window running h. On exit it calls
 // conch notify, switches focus back to the originating window, then closes itself.
-func SpawnTmuxWindow(h Harness, windowName, agent, prompt, dir string, sessionID int64, beforeIDs string) error {
+func SpawnTmuxWindow(h Harness, windowName, agent, prompt, dir string, sessionID int64) error {
 	prevID, err := exec.Command("tmux", "display-message", "-p", "#{window_id}").Output()
 	if err != nil {
 		return fmt.Errorf("tmux display-message: %w", err)
 	}
 	prev := strings.TrimSpace(string(prevID))
-	notify := fmt.Sprintf("conch notify --session-id %d --worktree %q --before-ids %q", sessionID, dir, beforeIDs)
+	notify := fmt.Sprintf("conch notify --session-id %d --worktree %q", sessionID, dir)
 	shellCmd := fmt.Sprintf("SELF=$(tmux display-message -p '#{window_id}'); cd %q && %s; %s; tmux select-window -t %s; tmux kill-window -t $SELF",
 		dir, h.CLICommand(agent, prompt), notify, prev)
 	return exec.Command("tmux", "new-window", "-n", windowName, "sh", "-c", shellCmd).Run()

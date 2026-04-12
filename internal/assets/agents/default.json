@@ -34,7 +34,7 @@
     "skill://.kiro/skills/CONCH_TASK/SKILL.md",
     "skill://.kiro/skills/skill-builder/SKILL.md",
     "skill://.kiro/skills/zed-workspaces/SKILL.md",
-    "skill://.kiro/skills/slug/SKILL.md"
+    "file://.kiro/skills/slug/SKILL.md"
   ],
   "hooks": {},
   "toolsSettings": {},

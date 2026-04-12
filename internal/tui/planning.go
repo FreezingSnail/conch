@@ -40,9 +40,6 @@ type planningWizard struct {
 	sessionID int64
 	worktree  string // first worktree path, used as kiro working dir
 
-	// kiro session linking: snapshot of session IDs before launch
-	beforeIDs []string
-
 	// summary state
 	tasks  []taskLine
 	status string
@@ -120,10 +117,9 @@ func (w planningWizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		w.ticketID = msg.ticketID
 		w.sessionID = msg.sessionID
 		w.worktree = msg.worktree
-		w.beforeIDs = kiro.ListSessionIDs(w.worktree)
 		prompt := kiro.BuildPrompt(w.ticketNum, w.ticketID)
 		if harness.InTmux() {
-			err := harness.SpawnTmuxWindow(kiro.Kiro{}, w.ticketNum, "planning", prompt, w.worktree, w.sessionID, harness.JoinIDs(w.beforeIDs))
+			err := harness.SpawnTmuxWindow(kiro.Kiro{}, w.ticketNum, "planning", prompt, w.worktree, w.sessionID)
 			if err != nil {
 				w.status = "tmux error: " + err.Error()
 				w.step = stepRepoPicker
@@ -137,19 +133,10 @@ func (w planningWizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		})
 
 	case kiroExitMsg:
-		// Diff kiro sessions to find the UUID created during this run.
-		afterIDs := kiro.ListSessionIDs(w.worktree)
-		if uuid := kiro.NewSessionID(w.beforeIDs, afterIDs); uuid != "" {
-			client.Send(client.Request{ //nolint:errcheck
-				Action:        "set_kiro_session",
-				SessionID:     w.sessionID,
-				KiroSessionID: uuid,
-			})
-		}
 		client.Send(client.Request{ //nolint:errcheck
-			Action:    "update_session_status",
+			Action:    "plan_complete",
 			SessionID: w.sessionID,
-			Status:    "completed",
+			Worktree:  w.worktree,
 		})
 		ticketID := w.ticketID
 		return w, func() tea.Msg {

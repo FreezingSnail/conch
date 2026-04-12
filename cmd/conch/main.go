@@ -35,7 +35,6 @@ func runNotify(args []string) {
 	fs := flag.NewFlagSet("notify", flag.ExitOnError)
 	sessionID := fs.Int64("session-id", 0, "conch session ID")
 	worktree := fs.String("worktree", "", "worktree path")
-	beforeIDs := fs.String("before-ids", "", "comma-separated kiro session IDs before launch")
 	fs.Parse(args) //nolint:errcheck
 
 	if *sessionID == 0 || *worktree == "" {
@@ -46,7 +45,6 @@ func runNotify(args []string) {
 		Action:    "plan_complete",
 		SessionID: *sessionID,
 		Worktree:  *worktree,
-		BeforeIDs: *beforeIDs,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "notify:", err)

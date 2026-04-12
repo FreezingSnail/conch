@@ -6,7 +6,7 @@
   "allowedTools": ["fs_read", "fs_write", "execute_bash", "grep", "glob", "@builtin/code"],
   "resources": [
     "skill://tooling/skills/CONCH_TASK/SKILL.md",
-    "skill://~/.kiro/skills/code-module-design/SKILL.md",
-    "skill://~/.kiro/skills/code-comments/SKILL.md"
+    "skill://.kiro/skills/code-module-design/SKILL.md",
+    "skill://.kiro/skills/code-comments/SKILL.md"
   ]
 }

@@ -370,6 +370,15 @@ type Session struct {
 	EndedAt       *time.Time // Nil while the session is still running.
 }
 
+// GetSessionByID returns the session with the given ID.
+func (d *DB) GetSessionByID(id int64) (Session, error) {
+	var s Session
+	err := d.conn.QueryRow(
+		`SELECT id, COALESCE(ticket_id,0), COALESCE(task_id,0), harness, status, COALESCE(kiro_session_id,''), started_at, ended_at FROM sessions WHERE id=?`, id,
+	).Scan(&s.ID, &s.TicketID, &s.TaskID, &s.Harness, &s.Status, &s.KiroSessionID, &s.StartedAt, &s.EndedAt)
+	return s, err
+}
+
 // CreateSession inserts a new session record. Pass ticketID=0 when not linked to a ticket.
 func (d *DB) CreateSession(ticketID int64, harness, status string) (int64, error) {
 	var res sql.Result

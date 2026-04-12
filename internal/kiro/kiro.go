@@ -4,7 +4,6 @@ package kiro
 import (
 	"fmt"
 	"os/exec"
-	"regexp"
 	"strings"
 
 	"github.com/FreezingSnail/conch/internal/db"
@@ -13,8 +12,6 @@ import (
 
 // compile-time interface check
 var _ harness.Harness = Kiro{}
-
-var uuidRe = regexp.MustCompile(`[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
 
 // Kiro implements harness.Harness for kiro-cli.
 type Kiro struct{}
@@ -48,41 +45,6 @@ func (k Kiro) CLICommand(agent, prompt string) string {
 		return "kiro-cli chat"
 	}
 	return fmt.Sprintf("kiro-cli chat --agent %s --trust-all-tools %q", agent, prompt)
-}
-
-// ListSessionIDs runs "kiro-cli chat --list-sessions" in dir and returns all
-// session UUIDs found in the output.
-func ListSessionIDs(dir string) []string {
-	cmd := exec.Command("kiro-cli", "chat", "--list-sessions")
-	cmd.Dir = dir
-	out, err := cmd.Output()
-	if err != nil {
-		return nil
-	}
-	matches := uuidRe.FindAllString(string(out), -1)
-	seen := make(map[string]bool, len(matches))
-	result := make([]string, 0, len(matches))
-	for _, id := range matches {
-		if !seen[id] {
-			seen[id] = true
-			result = append(result, id)
-		}
-	}
-	return result
-}
-
-// NewSessionID returns the first UUID present in after but not in before.
-func NewSessionID(before, after []string) string {
-	old := make(map[string]bool, len(before))
-	for _, id := range before {
-		old[id] = true
-	}
-	for _, id := range after {
-		if !old[id] {
-			return id
-		}
-	}
-	return ""
 }
 
 // BuildPrompt formats the planning context string passed to kiro-cli.

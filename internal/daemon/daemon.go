@@ -41,7 +41,9 @@ func slugPreamble(mode string) string {
 }
 
 // injectSlugMode prepends a slug activation preamble to the agent's prompt field.
-// Returns b unchanged if mode is "off" or JSON cannot be parsed.
+// For the planning agent, slugdd skill content is also injected between the slug
+// preamble and the existing prompt. Returns b unchanged if mode is "off" or JSON
+// cannot be parsed.
 func injectSlugMode(b []byte, mode string) []byte {
 	if mode == "off" {
 		return b
@@ -51,6 +53,9 @@ func injectSlugMode(b []byte, mode string) []byte {
 		return b
 	}
 	prefix := slugPreamble(mode)
+	if agent["name"] == "planning" {
+		prefix += string(assets.SlugddSkill) + "\n\n"
+	}
 	if p, ok := agent["prompt"].(string); ok {
 		agent["prompt"] = prefix + p
 	}
@@ -80,7 +85,7 @@ func seedKiroConfig(worktreePath, slugMode string) {
 	os.WriteFile(filepath.Join(agentsDir, "default.json"), injectSlugMode(assets.KiroDefaultAgent, slugMode), 0o644)         //nolint:errcheck
 	os.WriteFile(filepath.Join(agentsDir, "pr-reviewer.json"), injectSlugMode(assets.KiroPRReviewerAgent, slugMode), 0o644)  //nolint:errcheck
 
-	for name, data := range map[string][]byte{"slug": assets.SlugSkill, "CONCH_TASK": assets.ConchTaskSkill} {
+	for name, data := range map[string][]byte{"slug": assets.SlugSkill, "slugdd": assets.SlugddSkill, "CONCH_TASK": assets.ConchTaskSkill} {
 		dir := filepath.Join(worktreePath, ".kiro", "skills", name)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			continue
@@ -535,18 +540,13 @@ func dispatch(req client.Request, database *db.DB) client.Response {
 		return client.Response{OK: true}
 
 	case "plan_complete":
-		// plan_complete is called by the tmux wrapper script after kiro exits.
-		// It diffs kiro sessions to capture the new UUID, then marks the session completed.
 		if req.SessionID == 0 || req.Worktree == "" {
 			return client.Response{Error: "session_id and worktree required"}
 		}
-		var before []string
-		if req.BeforeIDs != "" {
-			before = strings.Split(req.BeforeIDs, ",")
-		}
-		afterIDs := kiro.ListSessionIDs(req.Worktree)
-		if uuid := kiro.NewSessionID(before, afterIDs); uuid != "" {
-			database.SetSessionKiroID(req.SessionID, uuid) //nolint:errcheck
+		if sess, err := database.GetSessionByID(req.SessionID); err == nil {
+			if uuid, err := kiro.FindSessionByCwd(req.Worktree, sess.StartedAt); err == nil && uuid != "" {
+				database.SetSessionKiroID(req.SessionID, uuid) //nolint:errcheck
+			}
 		}
 		if err := database.UpdateSessionStatus(req.SessionID, "completed"); err != nil {
 			return client.Response{Error: err.Error()}
@@ -621,7 +621,7 @@ func dispatch(req client.Request, database *db.DB) client.Response {
 			return client.Response{Error: "must be running inside tmux"}
 		}
 		prompt := kiro.BuildReplanPrompt(ticket.TicketNumber, ticket.ID, unaddressed)
-		if err := harness.SpawnTmuxWindow(kiro.Kiro{}, ticket.TicketNumber, "planning", prompt, ticket.WorktreePath, 0, ""); err != nil {
+		if err := harness.SpawnTmuxWindow(kiro.Kiro{}, ticket.TicketNumber, "planning", prompt, ticket.WorktreePath, 0); err != nil {
 			return client.Response{Error: err.Error()}
 		}
 		return client.Response{OK: true}
@@ -1061,12 +1061,28 @@ func runExecutor(sessionID int64, prompt, worktreePath string, database *db.DB) 
 		return
 	}
 	cmd.Stderr = cmd.Stdout
-	beforeIDs := kiro.ListSessionIDs(worktreePath)
+	launchTime := time.Now()
 	if err := cmd.Start(); err != nil {
 		database.UpdateSessionStatus(sessionID, "error")
 		database.AppendSessionLog(sessionID, "error", err.Error())
 		return
 	}
+	stop := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if uuid, err := kiro.FindSessionByCwd(worktreePath, launchTime); err == nil && uuid != "" {
+					database.SetSessionKiroID(sessionID, uuid) //nolint:errcheck
+					return
+				}
+			case <-stop:
+				return
+			}
+		}
+	}()
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
 		database.AppendSessionLog(sessionID, "stdout", scanner.Text())
@@ -1077,8 +1093,5 @@ func runExecutor(sessionID int64, prompt, worktreePath string, database *db.DB) 
 	} else {
 		database.UpdateSessionStatus(sessionID, "completed")
 	}
-	// Diff after exit — deterministic, no goroutine race.
-	if uuid := kiro.NewSessionID(beforeIDs, kiro.ListSessionIDs(worktreePath)); uuid != "" {
-		database.SetSessionKiroID(sessionID, uuid) //nolint:errcheck
-	}
+	close(stop)
 }

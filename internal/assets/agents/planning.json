@@ -10,5 +10,5 @@
   },
   "tools": ["fs_read", "grep", "glob", "execute_bash", "@builtin/code"],
   "allowedTools": ["fs_read", "grep", "glob", "execute_bash", "@builtin/code"],
-  "resources": ["skill://tooling/skills/CONCH_TASK/SKILL.md"]
+  "resources": ["skill://tooling/skills/CONCH_TASK/SKILL.md", "file://.kiro/skills/slug/SKILL.md"]
 }
