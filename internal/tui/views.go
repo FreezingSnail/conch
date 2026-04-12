@@ -32,6 +32,8 @@ func newView(name string) tea.Model {
 		return newPlanningSessionsView()
 	case "Feedback":
 		return newFeedbackView()
+	case "Review":
+		return newReviewView()
 	default:
 		return stubView{name: name}
 	}

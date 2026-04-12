@@ -21,6 +21,7 @@ var menuItems = []menuItem{
 	{"Planning Sessions", 'l'},
 	{"Mantle", 'm'},
 	{"Feedback", 'f'},
+	{"Review", 'v'},
 }
 
 type menu struct {
