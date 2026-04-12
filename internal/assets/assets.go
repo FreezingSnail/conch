@@ -1,7 +1,7 @@
 // Package assets embeds static files bundled into the conch binary.
 package assets
 
-import _ "embed"
+import "embed"
 
 //go:embed lsp.json
 var KiroLSPConfig []byte
@@ -17,3 +17,9 @@ var KiroPlanningAgent []byte
 
 //go:embed skills/CONCH_TASK/SKILL.md
 var ConchTaskSkill []byte
+
+//go:embed agents
+var Agents embed.FS
+
+//go:embed skills
+var Skills embed.FS

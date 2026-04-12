@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	glamour "charm.land/glamour/v2"
+	"github.com/FreezingSnail/conch/internal/assets"
 	"github.com/FreezingSnail/conch/internal/config"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -45,6 +46,10 @@ type mantleView struct {
 	// docs / settings loaded lazily
 	readme   string
 	settings string
+	// settings editor
+	cfg     config.Config
+	editing bool   // adding a new work_dir
+	input   string // text being typed
 }
 
 func (v mantleView) width() int {
@@ -59,6 +64,7 @@ type mantleLoadedMsg struct {
 	skills   []string
 	readme   string
 	settings string
+	cfg      config.Config
 }
 
 func newMantleView() mantleView { return mantleView{} }
@@ -72,8 +78,13 @@ func (v mantleView) HelpLine() string {
 		return "↑/↓ scroll  esc back"
 	}
 	switch v.section {
-	case mantleDocs, mantleSettings:
+	case mantleDocs:
 		return "enter read  tab switch  esc back"
+	case mantleSettings:
+		if v.editing {
+			return "enter confirm  esc cancel"
+		}
+		return "↑/↓ navigate  a add  d delete  tab switch  esc back"
 	default:
 		return "↑/↓ navigate  enter read  tab switch  esc back"
 	}
@@ -81,19 +92,14 @@ func (v mantleView) HelpLine() string {
 
 func (v mantleView) Init() tea.Cmd {
 	return func() tea.Msg {
-		// agents — load from JSON files
-		agentsBase := filepath.Join(os.Getenv("HOME"), ".conch", "agents")
-		agentEntries, err := os.ReadDir(agentsBase)
-		if err != nil {
-			agentEntries, _ = os.ReadDir("tooling/agents")
-			agentsBase = "tooling/agents"
-		}
+		// agents — load from embedded FS
+		agentEntries, _ := assets.Agents.ReadDir("agents")
 		var agents []agentDef
 		for _, e := range agentEntries {
 			if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
 				continue
 			}
-			b, err := os.ReadFile(filepath.Join(agentsBase, e.Name()))
+			b, err := assets.Agents.ReadFile("agents/" + e.Name())
 			if err != nil {
 				continue
 			}
@@ -103,17 +109,12 @@ func (v mantleView) Init() tea.Cmd {
 			}
 		}
 
-		// skills
-		skillsBase := filepath.Join(os.Getenv("HOME"), ".conch", "skills")
-		skillEntries, err := os.ReadDir(skillsBase)
-		if err != nil {
-			skillEntries, _ = os.ReadDir("tooling/skills")
-			skillsBase = "tooling/skills"
-		}
+		// skills — load from embedded FS
+		skillEntries, _ := assets.Skills.ReadDir("skills")
 		var skills []string
 		for _, e := range skillEntries {
 			if e.IsDir() {
-				if _, err := os.Stat(filepath.Join(skillsBase, e.Name(), "SKILL.md")); err == nil {
+				if _, err := assets.Skills.Open("skills/" + e.Name() + "/SKILL.md"); err == nil {
 					skills = append(skills, e.Name())
 				}
 			}
@@ -133,7 +134,7 @@ func (v mantleView) Init() tea.Cmd {
 				filepath.Join(os.Getenv("HOME"), ".conch", "config.json"), string(b))
 		}
 
-		return mantleLoadedMsg{agents: agents, skills: skills, readme: readme, settings: settingsStr}
+		return mantleLoadedMsg{agents: agents, skills: skills, readme: readme, settings: settingsStr, cfg: cfg}
 	}
 }
 
@@ -163,6 +164,9 @@ func (v mantleView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		v.skills = msg.skills
 		v.readme = msg.readme
 		v.settings = msg.settings
+		v.cfg = msg.cfg
+	case mantleSavedMsg:
+		v.cfg = msg.cfg
 	case mantleOpenMsg:
 		v.content = msg.content
 		v.title = msg.title
@@ -171,6 +175,9 @@ func (v mantleView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		if v.content != "" {
 			return v.handleReaderKey(msg)
+		}
+		if v.section == mantleSettings && v.editing {
+			return v.handleSettingsInput(msg)
 		}
 		return v.handleNavKey(msg)
 	}
@@ -196,6 +203,8 @@ func (v mantleView) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			v.cursor++
 		} else if v.section == mantleSkills && v.cursor < len(v.skills)-1 {
 			v.cursor++
+		} else if v.section == mantleSettings && v.cursor < len(v.cfg.WorkDirs)-1 {
+			v.cursor++
 		}
 	case "enter":
 		switch v.section {
@@ -215,7 +224,7 @@ func (v mantleView) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return v, nil
 			}
 			name := v.skills[v.cursor]
-			return v, readSkillCmd(filepath.Join(os.Getenv("HOME"), ".conch", "skills"), "tooling/skills", name)
+			return v, readSkillCmd(name)
 		case mantleDocs:
 			v.content = v.readme
 			v.title = "README"
@@ -226,6 +235,19 @@ func (v mantleView) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			v.title = "Settings"
 			v.scroll = 0
 			v.rendered = v.settings // plain text, no markdown rendering
+		}
+	case "a":
+		if v.section == mantleSettings {
+			v.editing = true
+			v.input = ""
+		}
+	case "d":
+		if v.section == mantleSettings && len(v.cfg.WorkDirs) > 0 {
+			v.cfg.WorkDirs = append(v.cfg.WorkDirs[:v.cursor], v.cfg.WorkDirs[v.cursor+1:]...)
+			if v.cursor >= len(v.cfg.WorkDirs) && v.cursor > 0 {
+				v.cursor--
+			}
+			return v, saveConfigCmd(v.cfg)
 		}
 	}
 	return v, nil
@@ -258,19 +280,48 @@ func agentDetailContent(a agentDef) string {
 	return sb.String()
 }
 
-func readSkillCmd(primaryBase, fallbackBase, name string) tea.Cmd {
+func readSkillCmd(name string) tea.Cmd {
 	return func() tea.Msg {
-		p := filepath.Join(primaryBase, name, "SKILL.md")
-		b, err := os.ReadFile(p)
-		if err != nil {
-			p = filepath.Join(fallbackBase, name, "SKILL.md")
-			b, err = os.ReadFile(p)
-		}
+		b, err := assets.Skills.ReadFile("skills/" + name + "/SKILL.md")
 		if err != nil {
 			return mantleOpenMsg{title: name, content: "error: " + err.Error()}
 		}
 		return mantleOpenMsg{title: name, content: string(b)}
 	}
+}
+
+type mantleSavedMsg struct{ cfg config.Config }
+
+func saveConfigCmd(cfg config.Config) tea.Cmd {
+	return func() tea.Msg {
+		config.Save(cfg)
+		return mantleSavedMsg{cfg: cfg}
+	}
+}
+
+func (v mantleView) handleSettingsInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		v.editing = false
+		v.input = ""
+	case "enter":
+		if v.input != "" {
+			v.cfg.WorkDirs = append(v.cfg.WorkDirs, v.input)
+			v.cursor = len(v.cfg.WorkDirs) - 1
+			v.editing = false
+			v.input = ""
+			return v, saveConfigCmd(v.cfg)
+		}
+	case "backspace":
+		if len(v.input) > 0 {
+			v.input = v.input[:len(v.input)-1]
+		}
+	default:
+		if len(msg.String()) == 1 {
+			v.input += msg.String()
+		}
+	}
+	return v, nil
 }
 
 func (v mantleView) handleReaderKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -328,7 +379,23 @@ func (v mantleView) View() string {
 	case mantleDocs:
 		s += "  " + StyleTitle.Render("README.md") + "\n\n  enter to read\n"
 	case mantleSettings:
-		s += "  " + StyleTitle.Render("conch config") + "\n\n  enter to view\n"
+		s += "  " + StyleTitle.Render("work_dirs") + "\n\n"
+		if len(v.cfg.WorkDirs) == 0 {
+			s += "  (none)\n"
+		} else {
+			for i, dir := range v.cfg.WorkDirs {
+				if i == v.cursor {
+					s += StyleCursor.Render("> "+dir) + "\n"
+				} else {
+					s += "  " + dir + "\n"
+				}
+			}
+		}
+		if v.editing {
+			s += "\n  new path: " + v.input + "█\n"
+		} else {
+			s += "\n  a add  d delete\n"
+		}
 	case mantleSkills:
 		if len(v.skills) == 0 {
 			s += "  no skills found\n"
