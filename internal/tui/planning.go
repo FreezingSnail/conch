@@ -275,7 +275,7 @@ func (w planningWizard) doPlanSetup(repos []string) tea.Cmd {
 		if !resp.OK {
 			return planSetupDoneMsg{err: resp.Error}
 		}
-		worktree := filepath.Join(os.Getenv("HOME"), ".conch", "worktrees", ticketNum, filepath.Base(repos[0]))
+		worktree := filepath.Join(os.Getenv("HOME"), ".conch", "worktrees", filepath.Base(repos[0]), ticketNum)
 		return planSetupDoneMsg{
 			ticketID:  resp.ID,
 			sessionID: resp.SessionID,

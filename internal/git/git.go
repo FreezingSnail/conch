@@ -29,6 +29,8 @@ func DefaultBranch(repoPath string) string {
 // path exists on disk but is unregistered it is removed before recreating; if the
 // branch already exists the -b flag is omitted.
 func WorktreeAdd(repoPath, worktreePath, branch string) error {
+	// Prune stale worktree entries so dead registrations don't block creation.
+	run(repoPath, "worktree", "prune") //nolint:errcheck
 	// Already registered — nothing to do.
 	paths, err := WorktreeList(repoPath)
 	if err == nil {

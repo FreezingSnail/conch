@@ -256,7 +256,7 @@ func dispatch(req client.Request, database *db.DB) client.Response {
 			return client.Response{Error: err.Error()}
 		}
 		if req.Repo != "" {
-			wtPath := filepath.Join(os.Getenv("HOME"), ".conch", "worktrees", fmt.Sprintf("%d", id))
+			wtPath := filepath.Join(os.Getenv("HOME"), ".conch", "worktrees", filepath.Base(req.Repo), fmt.Sprintf("%d", id))
 			if err := git.WorktreeAdd(req.Repo, wtPath, fmt.Sprintf("%d", id)); err != nil {
 				return client.Response{Error: "ticket created but worktree failed: " + err.Error()}
 			}
@@ -279,7 +279,7 @@ func dispatch(req client.Request, database *db.DB) client.Response {
 		if req.TicketID == 0 || req.Repo == "" {
 			return client.Response{Error: "ticket_id and repo required"}
 		}
-		wtPath := filepath.Join(os.Getenv("HOME"), ".conch", "worktrees", fmt.Sprintf("%d", req.TicketID))
+		wtPath := filepath.Join(os.Getenv("HOME"), ".conch", "worktrees", filepath.Base(req.Repo), fmt.Sprintf("%d", req.TicketID))
 		if err := git.WorktreeAdd(req.Repo, wtPath, fmt.Sprintf("%d", req.TicketID)); err != nil {
 			return client.Response{Error: err.Error()}
 		}
@@ -439,7 +439,7 @@ func dispatch(req client.Request, database *db.DB) client.Response {
 		}
 		for _, repo := range req.Repos {
 			base := filepath.Base(repo)
-			wtPath := filepath.Join(os.Getenv("HOME"), ".conch", "worktrees", req.TicketNumber, base)
+			wtPath := filepath.Join(os.Getenv("HOME"), ".conch", "worktrees", base, req.TicketNumber)
 			if err := git.WorktreeAdd(repo, wtPath, req.TicketNumber); err != nil {
 				return client.Response{Error: fmt.Sprintf("worktree for %s: %s", base, err.Error())}
 			}
