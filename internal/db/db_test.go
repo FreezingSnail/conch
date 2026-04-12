@@ -230,3 +230,118 @@ func TestMarkNotesAddressed(t *testing.T) {
 		t.Fatal("expected t2 note to remain unaddressed")
 	}
 }
+
+func TestUpsertPR_idempotent(t *testing.T) {
+	d := openTestDB(t)
+
+	id1, err := d.UpsertPR("myrepo", 42, "original title", "alice", "http://example.com/1", "sha1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	id2, err := d.UpsertPR("myrepo", 42, "updated title", "alice", "http://example.com/1", "sha2")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if id1 != id2 {
+		t.Fatalf("expected same id on upsert, got %d and %d", id1, id2)
+	}
+
+	prs, err := d.ListPRsByStatus("open")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prs) != 1 {
+		t.Fatalf("expected 1 PR, got %d", len(prs))
+	}
+	if prs[0].Title != "updated title" {
+		t.Fatalf("expected updated title, got %q", prs[0].Title)
+	}
+	if prs[0].HeadSHA != "sha2" {
+		t.Fatalf("expected sha2, got %q", prs[0].HeadSHA)
+	}
+}
+
+func TestListPRsByStatus(t *testing.T) {
+	d := openTestDB(t)
+
+	d.UpsertPR("repo", 1, "open PR", "alice", "u1", "s1")
+	id2, _ := d.UpsertPR("repo", 2, "in_review PR", "bob", "u2", "s2")
+	id3, _ := d.UpsertPR("repo", 3, "completed PR", "carol", "u3", "s3")
+
+	d.UpdatePRStatus(id2, "in_review")
+	d.UpdatePRStatus(id3, "completed")
+
+	open, err := d.ListPRsByStatus("open")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(open) != 1 || open[0].Title != "open PR" {
+		t.Fatalf("expected 1 open PR, got %+v", open)
+	}
+
+	inReview, _ := d.ListPRsByStatus("in_review")
+	if len(inReview) != 1 || inReview[0].ID != id2 {
+		t.Fatalf("expected 1 in_review PR, got %+v", inReview)
+	}
+
+	completed, _ := d.ListPRsByStatus("completed")
+	if len(completed) != 1 || completed[0].ID != id3 {
+		t.Fatalf("expected 1 completed PR, got %+v", completed)
+	}
+}
+
+func TestPRCommentCRUD(t *testing.T) {
+	d := openTestDB(t)
+
+	prID, err := d.UpsertPR("repo", 10, "my PR", "dev", "http://x", "abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// create comment
+	cID, err := d.CreatePRComment(prID, "suggestion", "main.go", 5, "use X instead")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// list — expect 1 unapproved, unpushed
+	comments, err := d.ListPRComments(prID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(comments) != 1 || comments[0].ID != cID {
+		t.Fatalf("expected 1 comment, got %+v", comments)
+	}
+	if comments[0].Approved || comments[0].Pushed {
+		t.Fatalf("expected unapproved and unpushed, got %+v", comments[0])
+	}
+
+	// approve
+	if err := d.SetPRCommentApproved(cID, true); err != nil {
+		t.Fatal(err)
+	}
+	comments, _ = d.ListPRComments(prID)
+	if !comments[0].Approved {
+		t.Fatal("expected comment to be approved")
+	}
+
+	// un-approve
+	if err := d.SetPRCommentApproved(cID, false); err != nil {
+		t.Fatal(err)
+	}
+	comments, _ = d.ListPRComments(prID)
+	if comments[0].Approved {
+		t.Fatal("expected comment to be unapproved")
+	}
+
+	// mark pushed
+	if err := d.SetPRCommentPushed(cID); err != nil {
+		t.Fatal(err)
+	}
+	comments, _ = d.ListPRComments(prID)
+	if !comments[0].Pushed {
+		t.Fatal("expected comment to be pushed")
+	}
+}

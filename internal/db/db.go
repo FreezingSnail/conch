@@ -92,6 +92,30 @@ func (d *DB) migrate() error {
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
 		);
+		CREATE TABLE IF NOT EXISTS pull_requests (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			repo TEXT NOT NULL,
+			pr_number INTEGER NOT NULL,
+			title TEXT NOT NULL,
+			author TEXT NOT NULL,
+			url TEXT NOT NULL,
+			head_sha TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'open',
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			UNIQUE(repo, pr_number)
+		);
+		CREATE TABLE IF NOT EXISTS pr_review_comments (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			pr_id INTEGER NOT NULL,
+			type TEXT NOT NULL,
+			file_path TEXT NOT NULL,
+			line INTEGER NOT NULL,
+			body TEXT NOT NULL,
+			approved INTEGER NOT NULL DEFAULT 0,
+			pushed INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL
+		);
 	`)
 	if err != nil {
 		return err
@@ -522,4 +546,158 @@ func scanFeedbackNotes(rows *sql.Rows) ([]FeedbackNote, error) {
 		notes = append(notes, n)
 	}
 	return notes, nil
+}
+
+// Pull Requests
+
+// PullRequest represents a GitHub PR being tracked for review.
+type PullRequest struct {
+	ID        int64
+	Repo      string
+	PRNumber  int
+	Title     string
+	Author    string
+	URL       string
+	HeadSHA   string
+	Status    string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// PRReviewComment is a single review comment attached to a PR, optionally approved and pushed.
+type PRReviewComment struct {
+	ID        int64
+	PRID      int64
+	Type      string
+	FilePath  string
+	Line      int
+	Body      string
+	Approved  bool
+	Pushed    bool
+	CreatedAt time.Time
+}
+
+// UpsertPR inserts a new PR row or updates title, author, url, head_sha, and updated_at on conflict.
+// Returns the row ID of the inserted or existing PR.
+func (d *DB) UpsertPR(repo string, prNumber int, title, author, url, headSHA string) (int64, error) {
+	now := time.Now()
+	res, err := d.conn.Exec(`
+		INSERT INTO pull_requests (repo, pr_number, title, author, url, head_sha, status, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?)
+		ON CONFLICT(repo, pr_number) DO UPDATE SET
+			title=excluded.title,
+			author=excluded.author,
+			url=excluded.url,
+			head_sha=excluded.head_sha,
+			updated_at=excluded.updated_at`,
+		repo, prNumber, title, author, url, headSHA, now, now,
+	)
+	if err != nil {
+		return 0, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	// ON CONFLICT UPDATE returns 0 for LastInsertId on some drivers; fetch the real ID.
+	if id == 0 {
+		err = d.conn.QueryRow(`SELECT id FROM pull_requests WHERE repo=? AND pr_number=?`, repo, prNumber).Scan(&id)
+	}
+	return id, err
+}
+
+// ListPRsByStatus returns all PRs with the given status, ordered by created_at ascending.
+func (d *DB) ListPRsByStatus(status string) ([]PullRequest, error) {
+	rows, err := d.conn.Query(
+		`SELECT id, repo, pr_number, title, author, url, head_sha, status, created_at, updated_at FROM pull_requests WHERE status=? ORDER BY created_at ASC`,
+		status,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanPRs(rows)
+}
+
+// UpdatePRStatus sets the status field on the given PR.
+func (d *DB) UpdatePRStatus(id int64, status string) error {
+	_, err := d.conn.Exec(`UPDATE pull_requests SET status=?, updated_at=? WHERE id=?`, status, time.Now(), id)
+	return err
+}
+
+// GetPRByID returns the PR with the given ID. Returns sql.ErrNoRows if not found.
+func (d *DB) GetPRByID(id int64) (PullRequest, error) {
+	var pr PullRequest
+	err := d.conn.QueryRow(
+		`SELECT id, repo, pr_number, title, author, url, head_sha, status, created_at, updated_at FROM pull_requests WHERE id=?`, id,
+	).Scan(&pr.ID, &pr.Repo, &pr.PRNumber, &pr.Title, &pr.Author, &pr.URL, &pr.HeadSHA, &pr.Status, &pr.CreatedAt, &pr.UpdatedAt)
+	return pr, err
+}
+
+// CreatePRComment inserts a new review comment for the given PR and returns its ID.
+func (d *DB) CreatePRComment(prID int64, typ, filePath string, line int, body string) (int64, error) {
+	res, err := d.conn.Exec(
+		`INSERT INTO pr_review_comments (pr_id, type, file_path, line, body, approved, pushed, created_at) VALUES (?, ?, ?, ?, ?, 0, 0, ?)`,
+		prID, typ, filePath, line, body, time.Now(),
+	)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+// ListPRComments returns all review comments for the given PR, ordered by created_at ascending.
+func (d *DB) ListPRComments(prID int64) ([]PRReviewComment, error) {
+	rows, err := d.conn.Query(
+		`SELECT id, pr_id, type, file_path, line, body, approved, pushed, created_at FROM pr_review_comments WHERE pr_id=? ORDER BY created_at ASC`,
+		prID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanPRComments(rows)
+}
+
+// SetPRCommentApproved sets the approved flag on the given comment.
+func (d *DB) SetPRCommentApproved(id int64, approved bool) error {
+	v := 0
+	if approved {
+		v = 1
+	}
+	_, err := d.conn.Exec(`UPDATE pr_review_comments SET approved=? WHERE id=?`, v, id)
+	return err
+}
+
+// SetPRCommentPushed marks the given comment as pushed (pushed=1).
+func (d *DB) SetPRCommentPushed(id int64) error {
+	_, err := d.conn.Exec(`UPDATE pr_review_comments SET pushed=1 WHERE id=?`, id)
+	return err
+}
+
+func scanPRs(rows *sql.Rows) ([]PullRequest, error) {
+	var prs []PullRequest
+	for rows.Next() {
+		var pr PullRequest
+		if err := rows.Scan(&pr.ID, &pr.Repo, &pr.PRNumber, &pr.Title, &pr.Author, &pr.URL, &pr.HeadSHA, &pr.Status, &pr.CreatedAt, &pr.UpdatedAt); err != nil {
+			return nil, err
+		}
+		prs = append(prs, pr)
+	}
+	return prs, nil
+}
+
+func scanPRComments(rows *sql.Rows) ([]PRReviewComment, error) {
+	var comments []PRReviewComment
+	for rows.Next() {
+		var c PRReviewComment
+		var approved, pushed int
+		if err := rows.Scan(&c.ID, &c.PRID, &c.Type, &c.FilePath, &c.Line, &c.Body, &approved, &pushed, &c.CreatedAt); err != nil {
+			return nil, err
+		}
+		c.Approved = approved == 1
+		c.Pushed = pushed == 1
+		comments = append(comments, c)
+	}
+	return comments, nil
 }
