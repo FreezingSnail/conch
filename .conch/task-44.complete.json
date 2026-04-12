@@ -1,0 +1,6 @@
+{
+  "task_id": 44,
+  "type": "feat",
+  "subject": "implement runGoExecutor and runImplementor in runner.go",
+  "body": "Replaced the kiro-agent-based runExecutor with a Go-native execution loop. runGoExecutor iterates over a ticket's tasks, finds those executable (todo/in-progress with all blockers done), marks them in-progress, and fans out one runImplementor goroutine per task. Each implementor spawns a kiro background session with the implementor agent, streams output to session logs, then reads the JSON artifact the agent writes to .conch/task-<id>.complete.json. Successful results are merged by synthesizeCommit (highest-precedence conventional-commit type wins; bodies joined; Tasks trailer appended) and committed via runGitCommit (git add -A + git commit). Failed tasks are marked human-intervention. The loop repeats until no executable tasks remain, then the session is finalized to completed or error."
+}
