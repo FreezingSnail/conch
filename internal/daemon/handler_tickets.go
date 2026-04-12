@@ -28,7 +28,9 @@ func handleTickets(req client.Request, database *db.DB) (client.Response, bool) 
 			if err := git.WorktreeAdd(req.Repo, wtPath, fmt.Sprintf("%d", id)); err != nil {
 				return client.Response{Error: "ticket created but worktree failed: " + err.Error()}, true
 			}
-			database.SetTicketRepo(id, req.Repo, wtPath)
+			if err := database.SetTicketRepo(id, req.Repo, wtPath); err != nil {
+				return client.Response{Error: "ticket created but repo link failed: " + err.Error()}, true
+			}
 		}
 		return client.Response{OK: true, ID: id}, true
 

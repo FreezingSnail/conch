@@ -125,7 +125,7 @@ func handleSessions(req client.Request, database *db.DB) (client.Response, bool)
 		}
 		if sess, err := database.GetSessionByID(req.SessionID); err == nil {
 			if uuid, err := kiro.FindSessionByCwd(req.Worktree, sess.StartedAt); err == nil && uuid != "" {
-				database.SetSessionKiroID(req.SessionID, uuid) //nolint:errcheck
+				database.SetSessionKiroID(req.SessionID, uuid) // best-effort: kiro session UUID enriches the record but is not required for correctness
 			}
 		}
 		if err := database.UpdateSessionStatus(req.SessionID, "completed"); err != nil {

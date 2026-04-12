@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -186,13 +187,18 @@ func runPRReviewer(sessionID, prID int64, prompt, tmpDir string, database *db.DB
 		database.UpdateSessionStatus(sessionID, "error") //nolint:errcheck
 		return
 	}
-	cmd.Stderr = cmd.Stdout
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		database.UpdateSessionStatus(sessionID, "error") //nolint:errcheck
+		return
+	}
+	combined := io.MultiReader(stdout, stderr)
 	if err := cmd.Start(); err != nil {
 		database.UpdateSessionStatus(sessionID, "error")           //nolint:errcheck
 		database.AppendSessionLog(sessionID, "error", err.Error()) //nolint:errcheck
 		return
 	}
-	scanner := bufio.NewScanner(stdout)
+	scanner := bufio.NewScanner(combined)
 	for scanner.Scan() {
 		database.AppendSessionLog(sessionID, "stdout", scanner.Text()) //nolint:errcheck
 	}

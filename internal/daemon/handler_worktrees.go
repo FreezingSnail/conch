@@ -45,8 +45,12 @@ func handleWorktrees(req client.Request, database *db.DB) (client.Response, bool
 		if err := git.WorktreeRemove(ticket.Repo, ticket.WorktreePath); err != nil {
 			return client.Response{Error: err.Error()}, true
 		}
-		database.SetTicketRepo(req.TicketID, ticket.Repo, "")
-		database.DeleteWorktreeByPath(ticket.WorktreePath)
+		if err := database.SetTicketRepo(req.TicketID, ticket.Repo, ""); err != nil {
+			return client.Response{Error: err.Error()}, true
+		}
+		if err := database.DeleteWorktreeByPath(ticket.WorktreePath); err != nil {
+			return client.Response{Error: err.Error()}, true
+		}
 		return client.Response{OK: true}, true
 
 	case "list_worktrees":
@@ -104,8 +108,12 @@ func handleWorktrees(req client.Request, database *db.DB) (client.Response, bool
 			return client.Response{OK: true, Lines: []string{out}}, true
 		}
 		git.WorktreeRemove(t.Repo, t.WorktreePath)
-		database.SetTicketRepo(req.TicketID, t.Repo, "")
-		database.DeleteWorktreeByPath(t.WorktreePath)
+		if err := database.SetTicketRepo(req.TicketID, t.Repo, ""); err != nil {
+			return client.Response{Error: err.Error()}, true
+		}
+		if err := database.DeleteWorktreeByPath(t.WorktreePath); err != nil {
+			return client.Response{Error: err.Error()}, true
+		}
 		return client.Response{OK: true}, true
 
 	case "open_pr":
@@ -115,6 +123,9 @@ func handleWorktrees(req client.Request, database *db.DB) (client.Response, bool
 		t, err := database.GetTicketByID(req.TicketID)
 		if err != nil {
 			return client.Response{Error: err.Error()}, true
+		}
+		if t.WorktreePath == "" {
+			return client.Response{Error: "no worktree for ticket"}, true
 		}
 		branch := ticketBranch(t)
 		base := git.DefaultBranch(t.Repo)
@@ -136,8 +147,12 @@ func handleWorktrees(req client.Request, database *db.DB) (client.Response, bool
 		}
 		cmd := exec.Command("git", "status")
 		cmd.Dir = t.WorktreePath
-		out, _ := cmd.CombinedOutput()
-		return client.Response{OK: true, Lines: []string{string(out)}}, true
+		out, err := cmd.CombinedOutput()
+		lines := []string{string(out)}
+		if err != nil {
+			lines = append(lines, "error: "+err.Error())
+		}
+		return client.Response{OK: true, Lines: lines}, true
 
 	case "worktree_diff":
 		if req.TicketID == 0 {
@@ -149,8 +164,12 @@ func handleWorktrees(req client.Request, database *db.DB) (client.Response, bool
 		}
 		cmd := exec.Command("git", "diff")
 		cmd.Dir = t.WorktreePath
-		out, _ := cmd.CombinedOutput()
-		return client.Response{OK: true, Lines: []string{string(out)}}, true
+		out, err := cmd.CombinedOutput()
+		lines := []string{string(out)}
+		if err != nil {
+			lines = append(lines, "error: "+err.Error())
+		}
+		return client.Response{OK: true, Lines: lines}, true
 
 	default:
 		return client.Response{}, false

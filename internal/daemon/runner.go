@@ -20,13 +20,18 @@ func runBackground(sessionID int64, prompt string, database *db.DB) {
 		database.UpdateSessionStatus(sessionID, "error")
 		return
 	}
-	cmd.Stderr = cmd.Stdout
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		database.UpdateSessionStatus(sessionID, "error")
+		return
+	}
+	combined := io.MultiReader(stdout, stderr)
 	if err := cmd.Start(); err != nil {
 		database.UpdateSessionStatus(sessionID, "error")
 		database.AppendSessionLog(sessionID, "error", err.Error())
 		return
 	}
-	scanner := bufio.NewScanner(stdout)
+	scanner := bufio.NewScanner(combined)
 	for scanner.Scan() {
 		database.AppendSessionLog(sessionID, "stdout", scanner.Text())
 	}
@@ -36,7 +41,6 @@ func runBackground(sessionID int64, prompt string, database *db.DB) {
 		return
 	}
 	database.UpdateSessionStatus(sessionID, "completed")
-	_ = io.Discard
 }
 
 // runExecutor spawns a headless kiro executor in the ticket's worktree and
@@ -53,7 +57,12 @@ func runExecutor(sessionID int64, prompt, worktreePath string, database *db.DB) 
 		database.UpdateSessionStatus(sessionID, "error")
 		return
 	}
-	cmd.Stderr = cmd.Stdout
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		database.UpdateSessionStatus(sessionID, "error")
+		return
+	}
+	combined := io.MultiReader(stdout, stderr)
 	launchTime := time.Now()
 	if err := cmd.Start(); err != nil {
 		database.UpdateSessionStatus(sessionID, "error")
@@ -76,7 +85,7 @@ func runExecutor(sessionID int64, prompt, worktreePath string, database *db.DB) 
 			}
 		}
 	}()
-	scanner := bufio.NewScanner(stdout)
+	scanner := bufio.NewScanner(combined)
 	for scanner.Scan() {
 		database.AppendSessionLog(sessionID, "stdout", scanner.Text())
 	}

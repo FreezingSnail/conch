@@ -8,18 +8,29 @@ import (
 	"strings"
 )
 
+// run executes a git command in dir and returns trimmed combined output (stdout+stderr).
+// Using CombinedOutput ensures error messages from git are included in the return value.
 func run(dir string, args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
-	out, err := cmd.Output()
+	out, err := cmd.CombinedOutput()
 	return strings.TrimSpace(string(out)), err
 }
 
-// DefaultBranch checks for a refs/heads/main file and returns "main" if present,
+// DefaultBranch returns "main" if the repo has a main branch (loose ref or packed-refs),
 // otherwise "master". Does not query the remote.
 func DefaultBranch(repoPath string) string {
 	if _, err := os.Stat(filepath.Join(repoPath, ".git", "refs", "heads", "main")); err == nil {
 		return "main"
+	}
+	// Fallback: check packed-refs for repos where loose refs have been packed.
+	data, err := os.ReadFile(filepath.Join(repoPath, ".git", "packed-refs"))
+	if err == nil {
+		for _, line := range strings.Split(string(data), "\n") {
+			if strings.Contains(line, "refs/heads/main") {
+				return "main"
+			}
+		}
 	}
 	return "master"
 }
