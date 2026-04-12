@@ -1,0 +1,6 @@
+{
+  "task_id": 43,
+  "type": "feat",
+  "subject": "Add BuildImplementorPrompt, remove BuildExecutorPrompt from kiro.go",
+  "body": "Replaced BuildExecutorPrompt with BuildImplementorPrompt(task db.Task) string in internal/kiro/kiro.go. The new function formats a [CONCH TASK] prompt header with task id, title, and body for use by Go executor code launching implementor kiro sessions. The removed BuildExecutorPrompt logic was inlined at its only call site in internal/daemon/handler_sessions.go to keep the build green."
+}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/FreezingSnail/conch/internal/client"
 	"github.com/FreezingSnail/conch/internal/config"
@@ -158,7 +159,12 @@ func handleSessions(req client.Request, database *db.DB) (client.Response, bool)
 		if err != nil {
 			return client.Response{Error: err.Error()}, true
 		}
-		prompt := kiro.BuildExecutorPrompt(ticket.TicketNumber, ticket.ID, tasks)
+		taskLines := make([]string, len(tasks))
+		for i, t := range tasks {
+			taskLines[i] = fmt.Sprintf("  [%s] id:%d %s", t.Status, t.ID, t.Title)
+		}
+		prompt := fmt.Sprintf("[CONCH EXECUTOR] ticket:%s id:%d\ntasks:\n%s",
+			ticket.TicketNumber, ticket.ID, strings.Join(taskLines, "\n"))
 		sessionID, err := database.CreateSession(req.TicketID, "kiro-executor", "running")
 		if err != nil {
 			return client.Response{Error: err.Error()}, true
