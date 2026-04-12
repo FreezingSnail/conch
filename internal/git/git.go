@@ -103,12 +103,18 @@ type Commit struct {
 	Subject string
 }
 
-// LogList returns commits reachable from HEAD in worktreePath, excluding merges.
-// Each entry is parsed from `git log --oneline --no-merges` output.
+// LogList returns commits on the current branch that are not on the default branch.
+// Uses `git log <default>..HEAD` to scope to branch-only commits.
+// Falls back to full log if the range is empty (e.g. on the default branch itself).
 func LogList(worktreePath string) ([]Commit, error) {
-	out, err := run(worktreePath, "log", "--oneline", "--no-merges")
-	if err != nil {
-		return nil, err
+	base := DefaultBranch(worktreePath)
+	out, err := run(worktreePath, "log", base+"..HEAD", "--oneline", "--no-merges")
+	if err != nil || strings.TrimSpace(out) == "" {
+		// Fall back: either base branch doesn't exist or we're on it.
+		out, err = run(worktreePath, "log", "--oneline", "--no-merges")
+		if err != nil {
+			return nil, err
+		}
 	}
 	if out == "" {
 		return nil, nil
@@ -132,6 +138,26 @@ func LogList(worktreePath string) ([]Commit, error) {
 // DiffCommit returns the unified diff for a single commit (git show --unified=3).
 func DiffCommit(worktreePath, hash string) (string, error) {
 	return run(worktreePath, "show", "--unified=3", hash)
+}
+
+// CommitMessage returns the full commit message body for a single commit.
+func CommitMessage(worktreePath, hash string) (string, error) {
+	return run(worktreePath, "show", "--no-patch", "--format=%B", hash)
+}
+
+// FilesChanged returns the list of files modified by a single commit.
+func FilesChanged(worktreePath, hash string) ([]string, error) {
+	out, err := run(worktreePath, "show", "--name-only", "--format=", hash)
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if line != "" {
+			files = append(files, line)
+		}
+	}
+	return files, nil
 }
 
 // NoteGet returns the git note attached to hash, or "" if none exists.

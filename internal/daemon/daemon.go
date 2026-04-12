@@ -574,20 +574,28 @@ func dispatch(req client.Request, database *db.DB) client.Response {
 		if req.NoteID == 0 {
 			return client.Response{Error: "note_id required"}
 		}
+		existing, err := database.GetFeedbackNote(req.NoteID)
+		if err != nil {
+			return client.Response{Error: err.Error()}
+		}
 		if err := database.UpdateFeedbackNote(req.NoteID, req.NoteBody); err != nil {
 			return client.Response{Error: err.Error()}
 		}
-		syncGitNote(database, req.TicketID, req.CommitHash)
+		syncGitNote(database, existing.TicketID, existing.CommitHash)
 		return client.Response{OK: true}
 
 	case "delete_feedback_note":
 		if req.NoteID == 0 {
 			return client.Response{Error: "note_id required"}
 		}
+		existing, err := database.GetFeedbackNote(req.NoteID)
+		if err != nil {
+			return client.Response{Error: err.Error()}
+		}
 		if err := database.DeleteFeedbackNote(req.NoteID); err != nil {
 			return client.Response{Error: err.Error()}
 		}
-		syncGitNote(database, req.TicketID, req.CommitHash)
+		syncGitNote(database, existing.TicketID, existing.CommitHash)
 		return client.Response{OK: true}
 
 	case "mark_notes_addressed":

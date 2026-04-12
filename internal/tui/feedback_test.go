@@ -10,7 +10,7 @@ import (
 
 // makeTicket is a helper that builds a minimal db.Ticket for tests.
 func makeTicket(id int64, title string) db.Ticket {
-	return db.Ticket{ID: id, Title: title, CreatedAt: time.Now()}
+	return db.Ticket{ID: id, Title: title, WorktreePath: "/fake/worktree", CreatedAt: time.Now()}
 }
 
 // makeNote is a helper that builds a db.FeedbackNote with the given addressed state.

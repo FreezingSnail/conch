@@ -69,7 +69,8 @@ func (t tabsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			t.tabs[t.active].name = titler.Title()
 		}
 		t.tabs[t.active].stack = append(t.tabs[t.active].stack, m)
-		return t, m.Init()
+		w, h := t.w, t.h
+		return t, tea.Batch(m.Init(), func() tea.Msg { return tea.WindowSizeMsg{Width: w, Height: h} })
 
 	case popMsg:
 		stack := t.tabs[t.active].stack

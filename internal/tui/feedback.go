@@ -72,15 +72,16 @@ func loadFeedback() tea.Msg {
 func (v feedbackView) tabTickets() []db.Ticket {
 	var out []db.Ticket
 	for _, t := range v.tickets {
+		if t.WorktreePath == "" {
+			continue // no worktree — nothing to review
+		}
 		notes := v.notesByTicket[t.ID]
 		switch v.tab {
 		case feedbackTabActive:
-			// Active: no notes yet, or at least one unaddressed note.
 			if len(notes) == 0 || hasUnaddressed(notes) {
 				out = append(out, t)
 			}
 		case feedbackTabArchived:
-			// Archived: at least one note and all are addressed.
 			if len(notes) > 0 && !hasUnaddressed(notes) {
 				out = append(out, t)
 			}
@@ -142,7 +143,7 @@ func (v feedbackView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(visible) == 0 || v.cursor >= len(visible) {
 				return v, nil
 			}
-			return v, push(newDiffView(visible[v.cursor]))
+			return v, push(newDiffView(visible[v.cursor], v.w, v.h))
 		case "b":
 			return v, push(newBurrowView())
 		case "r":

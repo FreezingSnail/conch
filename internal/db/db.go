@@ -442,6 +442,17 @@ type FeedbackNote struct {
 	UpdatedAt  time.Time
 }
 
+// GetFeedbackNote returns a single note by ID.
+func (d *DB) GetFeedbackNote(id int64) (FeedbackNote, error) {
+	var n FeedbackNote
+	var addressed int
+	err := d.conn.QueryRow(
+		`SELECT id, ticket_id, commit_hash, file_path, hunk_header, body, addressed, created_at, updated_at FROM feedback_notes WHERE id=?`, id,
+	).Scan(&n.ID, &n.TicketID, &n.CommitHash, &n.FilePath, &n.HunkHeader, &n.Body, &addressed, &n.CreatedAt, &n.UpdatedAt)
+	n.Addressed = addressed == 1
+	return n, err
+}
+
 // CreateFeedbackNote inserts a new feedback note and returns its ID.
 func (d *DB) CreateFeedbackNote(ticketID int64, commitHash, filePath, hunkHeader, body string) (int64, error) {
 	now := time.Now()

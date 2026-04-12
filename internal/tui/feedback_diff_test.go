@@ -9,130 +9,128 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// test_diff_view_render: given a diffView with mock commits and hunks, call
-// View() and expect three panel columns to be present without panicking.
-func test_diff_view_render(t *testing.T) {
-	t.Helper()
-
-	v := diffView{
-		ticket:  makeTicket(1, "My ticket"),
-		commits: []git.Commit{{Hash: "abc1234", Subject: "first commit"}},
-		hunks: []git.DiffHunk{
-			{FilePath: "main.go", HunkHeader: "@@ -1,3 +1,4 @@", Lines: []string{"+foo"}},
-		},
+func baseDiffView() diffView {
+	return diffView{
+		ticket:   makeTicket(1, "My ticket"),
+		commits:  []git.Commit{{Hash: "abc1234", Subject: "first commit"}},
 		allNotes: make(map[string][]db.FeedbackNote),
 		loaded:   true,
 		w:        120,
 		h:        40,
 	}
+}
 
+func test_diff_view_state_commits(t *testing.T) {
+	t.Helper()
+	v := baseDiffView()
+	v.commitFiles = []string{"main.go", "util.go"}
 	out := v.View()
-
-	// All three panel headers must appear.
 	if !strings.Contains(out, "Commits") {
-		t.Errorf("expected 'Commits' panel header in output:\n%s", out)
+		t.Errorf("expected 'Commits' header:\n%s", out)
 	}
-	if !strings.Contains(out, "Hunks") {
-		t.Errorf("expected 'Hunks' panel header in output:\n%s", out)
+	if !strings.Contains(out, "Files Changed") {
+		t.Errorf("expected 'Files Changed' header:\n%s", out)
 	}
-	if !strings.Contains(out, "Notes") {
-		t.Errorf("expected 'Notes' panel header in output:\n%s", out)
+	if !strings.Contains(out, "main.go") {
+		t.Errorf("expected file name in preview:\n%s", out)
 	}
 }
 
-// test_hunk_note_marker: given allNotes with an entry for one hunk key, expect
-// View() output contains ● for that hunk and not for hunks without notes.
+func test_diff_view_state_files(t *testing.T) {
+	t.Helper()
+	v := baseDiffView()
+	v.state = stateFiles
+	v.hunks = []git.DiffHunk{
+		{FilePath: "main.go", HunkHeader: "@@ -1,3 +1,4 @@", Lines: []string{"+foo"}},
+	}
+	out := v.View()
+	if !strings.Contains(out, "Files") {
+		t.Errorf("expected 'Files' header:\n%s", out)
+	}
+	if !strings.Contains(out, "Diff") {
+		t.Errorf("expected 'Diff' header:\n%s", out)
+	}
+	if !strings.Contains(out, "main.go") {
+		t.Errorf("expected file name in list:\n%s", out)
+	}
+}
+
 func test_hunk_note_marker(t *testing.T) {
 	t.Helper()
-
 	hunkWithNote := git.DiffHunk{FilePath: "foo.go", HunkHeader: "@@ -1,2 +1,3 @@"}
 	hunkWithout := git.DiffHunk{FilePath: "bar.go", HunkHeader: "@@ -5,2 +5,3 @@"}
-
 	notes := map[string][]db.FeedbackNote{
-		hunkKey(hunkWithNote): {
-			{ID: 1, TicketID: 1, Body: "looks good"},
-		},
+		hunkKey(hunkWithNote): {{ID: 1, TicketID: 1, Body: "looks good"}},
 	}
-
-	v := diffView{
-		ticket:   makeTicket(1, "ticket"),
-		commits:  []git.Commit{{Hash: "deadbeef", Subject: "some commit"}},
-		hunks:    []git.DiffHunk{hunkWithNote, hunkWithout},
-		allNotes: notes,
-		loaded:   true,
-		w:        120,
-		h:        40,
-	}
-
+	v := baseDiffView()
+	v.state = stateFiles
+	v.hunks = []git.DiffHunk{hunkWithNote, hunkWithout}
+	v.allNotes = notes
+	// foo.go (fileCur=0) has notes → notes panel visible
 	out := v.View()
-
-	if !strings.Contains(out, "●") {
-		t.Errorf("expected ● marker for hunk with notes, got:\n%s", out)
+	if !strings.Contains(out, "Notes") {
+		t.Errorf("expected Notes panel for selected file with notes:\n%s", out)
 	}
-
-	// Count occurrences: only one hunk has notes so ● should appear exactly once.
-	count := strings.Count(out, "●")
-	if count != 1 {
-		t.Errorf("expected exactly 1 ● marker, got %d in:\n%s", count, out)
+	// bar.go (fileCur=1) has no notes → ● on non-selected file with notes
+	v.fileCur = 1
+	out = v.View()
+	if !strings.Contains(out, "●") {
+		t.Errorf("expected ● marker on non-selected file with notes:\n%s", out)
 	}
 }
 
-// TestDiffView_render wraps the spec-named test so `go test` picks it up.
-func TestDiffView_render(t *testing.T) { test_diff_view_render(t) }
+func test_notes_panel_hidden_when_no_notes(t *testing.T) {
+	t.Helper()
+	v := baseDiffView()
+	v.state = stateFiles
+	v.hunks = []git.DiffHunk{{FilePath: "a.go", HunkHeader: "@@ -1 +1 @@"}}
+	out := v.View()
+	if strings.Contains(out, "Notes") {
+		t.Errorf("expected no Notes panel when no notes and not editing:\n%s", out)
+	}
+}
 
-// TestDiffView_hunk_note_marker wraps the spec-named test so `go test` picks it up.
-func TestDiffView_hunk_note_marker(t *testing.T) { test_hunk_note_marker(t) }
+func test_notes_panel_visible_when_editing(t *testing.T) {
+	t.Helper()
+	v := baseDiffView()
+	v.state = stateFiles
+	v.hunks = []git.DiffHunk{{FilePath: "a.go", HunkHeader: "@@ -1 +1 @@"}}
+	m, _ := v.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	out := m.(diffView).View()
+	if !strings.Contains(out, "Notes") {
+		t.Errorf("expected Notes panel visible while editing:\n%s", out)
+	}
+}
 
-// test_note_editor_open_close: pressing n from focusCenter opens the editor;
-// pressing esc closes it and clears state.
 func test_note_editor_open_close(t *testing.T) {
 	t.Helper()
-
-	v := diffView{
-		ticket:   makeTicket(1, "ticket"),
-		commits:  []git.Commit{{Hash: "abc", Subject: "c"}},
-		hunks:    []git.DiffHunk{{FilePath: "a.go", HunkHeader: "@@ -1 +1 @@"}},
-		allNotes: make(map[string][]db.FeedbackNote),
-		focus:    focusCenter,
-		loaded:   true,
-		w:        120,
-		h:        40,
-	}
-
+	v := baseDiffView()
+	v.state = stateFiles
+	v.hunks = []git.DiffHunk{{FilePath: "a.go", HunkHeader: "@@ -1 +1 @@"}}
 	m, _ := v.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
 	got := m.(diffView)
 	if !got.editing {
 		t.Fatal("expected editing=true after pressing n")
 	}
-
 	m, _ = got.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	got = m.(diffView)
 	if got.editing {
-		t.Error("expected editing=false after pressing esc")
+		t.Error("expected editing=false after esc")
 	}
 	if got.editText != "" || got.editNoteID != 0 {
-		t.Errorf("expected editText and editNoteID cleared, got %q / %d", got.editText, got.editNoteID)
+		t.Errorf("expected editText/editNoteID cleared, got %q/%d", got.editText, got.editNoteID)
 	}
 }
 
-// test_note_editor_text_input: while editing, printable keys accumulate into
-// editText and backspace removes the last character.
 func test_note_editor_text_input(t *testing.T) {
 	t.Helper()
-
-	v := diffView{
-		ticket:   makeTicket(1, "ticket"),
-		allNotes: make(map[string][]db.FeedbackNote),
-		editing:  true,
-	}
-
+	v := diffView{ticket: makeTicket(1, "t"), allNotes: make(map[string][]db.FeedbackNote), editing: true}
 	m, _ := v.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
 	m, _ = m.(diffView).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")})
 	got := m.(diffView)
 	if got.editText != "hi" {
 		t.Errorf("expected editText=%q, got %q", "hi", got.editText)
 	}
-
 	m, _ = got.Update(tea.KeyMsg{Type: tea.KeyBackspace})
 	got = m.(diffView)
 	if got.editText != "h" {
@@ -140,65 +138,86 @@ func test_note_editor_text_input(t *testing.T) {
 	}
 }
 
-// test_note_editor_save: pressing enter while editing with editNoteID==0 returns
-// a non-nil Cmd (the create_feedback_note IPC call) and closes the editor.
 func test_note_editor_save(t *testing.T) {
 	t.Helper()
-
-	v := diffView{
-		ticket:   makeTicket(1, "ticket"),
-		commits:  []git.Commit{{Hash: "abc", Subject: "c"}},
-		hunks:    []git.DiffHunk{{FilePath: "a.go", HunkHeader: "@@ -1 +1 @@"}},
-		allNotes: make(map[string][]db.FeedbackNote),
-		editing:  true,
-		editText: "looks good",
-		// editNoteID == 0 → create path
-	}
-
+	v := baseDiffView()
+	v.state = stateFiles
+	v.hunks = []git.DiffHunk{{FilePath: "a.go", HunkHeader: "@@ -1 +1 @@"}}
+	v.editing = true
+	v.editText = "looks good"
 	m, cmd := v.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	got := m.(diffView)
-
 	if cmd == nil {
-		t.Fatal("expected non-nil Cmd for create_feedback_note, got nil")
+		t.Fatal("expected non-nil Cmd for create_feedback_note")
 	}
 	if got.editing {
 		t.Error("expected editing=false after enter")
 	}
 }
 
-// test_note_delete: pressing d with focusRight and a note present returns a
-// non-nil Cmd (the delete_feedback_note IPC call).
 func test_note_delete(t *testing.T) {
 	t.Helper()
-
 	hunk := git.DiffHunk{FilePath: "a.go", HunkHeader: "@@ -1 +1 @@"}
 	notes := map[string][]db.FeedbackNote{
 		hunkKey(hunk): {{ID: 42, TicketID: 1, Body: "fix this"}},
 	}
-
-	v := diffView{
-		ticket:   makeTicket(1, "ticket"),
-		commits:  []git.Commit{{Hash: "abc", Subject: "c"}},
-		hunks:    []git.DiffHunk{hunk},
-		allNotes: notes,
-		focus:    focusRight,
-		loaded:   true,
-	}
-
+	v := baseDiffView()
+	v.state = stateFiles
+	v.hunks = []git.DiffHunk{hunk}
+	v.allNotes = notes
 	_, cmd := v.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
 	if cmd == nil {
-		t.Fatal("expected non-nil Cmd for delete_feedback_note, got nil")
+		t.Fatal("expected non-nil Cmd for delete_feedback_note")
 	}
 }
 
-// TestNoteEditorOpenClose wraps the spec-named test so `go test` picks it up.
-func TestNoteEditorOpenClose(t *testing.T) { test_note_editor_open_close(t) }
+func test_scroll_independent_of_file_cursor(t *testing.T) {
+	t.Helper()
+	lines := make([]string, 20)
+	for i := range lines {
+		lines[i] = "+line"
+	}
+	v := baseDiffView()
+	v.state = stateFiles
+	v.focus = focusRight
+	v.h = 10
+	v.hunks = []git.DiffHunk{{FilePath: "a.go", HunkHeader: "@@ -1 +1 @@", Lines: lines}}
+	m, _ := v.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	got := m.(diffView)
+	if got.fileCur != 0 {
+		t.Errorf("expected fileCur unchanged=0, got %d", got.fileCur)
+	}
+	if got.fileScroll != 1 {
+		t.Errorf("expected fileScroll=1, got %d", got.fileScroll)
+	}
+}
 
-// TestNoteEditorTextInput wraps the spec-named test so `go test` picks it up.
-func TestNoteEditorTextInput(t *testing.T) { test_note_editor_text_input(t) }
+func test_space_page_down(t *testing.T) {
+	t.Helper()
+	lines := make([]string, 40)
+	for i := range lines {
+		lines[i] = "+line"
+	}
+	v := baseDiffView()
+	v.state = stateFiles
+	v.focus = focusRight
+	v.h = 10
+	v.hunks = []git.DiffHunk{{FilePath: "a.go", HunkHeader: "@@ -1 +1 @@", Lines: lines}}
+	m, _ := v.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(" ")})
+	got := m.(diffView)
+	if got.fileScroll == 0 {
+		t.Error("expected fileScroll > 0 after space")
+	}
+}
 
-// TestNoteEditorSave wraps the spec-named test so `go test` picks it up.
-func TestNoteEditorSave(t *testing.T) { test_note_editor_save(t) }
-
-// TestNoteDelete wraps the spec-named test so `go test` picks it up.
-func TestNoteDelete(t *testing.T) { test_note_delete(t) }
+func TestDiffView_state_commits(t *testing.T)       { test_diff_view_state_commits(t) }
+func TestDiffView_state_files(t *testing.T)         { test_diff_view_state_files(t) }
+func TestDiffView_hunk_note_marker(t *testing.T)    { test_hunk_note_marker(t) }
+func TestDiffView_notes_panel_hidden(t *testing.T)  { test_notes_panel_hidden_when_no_notes(t) }
+func TestDiffView_notes_panel_visible(t *testing.T) { test_notes_panel_visible_when_editing(t) }
+func TestNoteEditorOpenClose(t *testing.T)          { test_note_editor_open_close(t) }
+func TestNoteEditorTextInput(t *testing.T)          { test_note_editor_text_input(t) }
+func TestNoteEditorSave(t *testing.T)               { test_note_editor_save(t) }
+func TestNoteDelete(t *testing.T)                   { test_note_delete(t) }
+func TestDiffView_scroll_independent(t *testing.T)  { test_scroll_independent_of_file_cursor(t) }
+func TestDiffView_space_page_down(t *testing.T)     { test_space_page_down(t) }
