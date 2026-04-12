@@ -22,6 +22,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // seedKiroConfig writes embedded kiro config files into the worktree.
@@ -80,6 +81,7 @@ func Run(database *db.DB) error {
 	}
 	defer ln.Close()
 	fmt.Println("conchd: listening on", addr)
+	startPRPoller(database)
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -634,40 +636,55 @@ func dispatch(req client.Request, database *db.DB) client.Response {
 		return client.Response{OK: true}
 
 	case "poll_prs":
-		// poll_prs discovers open PRs across all configured repos and upserts them
-		// into the database. Per-repo errors are skipped so a single bad repo does
-		// not abort the whole poll.
-		cfg, err := config.Load()
-		if err != nil {
-			return client.Response{OK: true}
+		pollPRs(database)
+		return client.Response{OK: true}
+
+	case "set_pr_comment_approved":
+		if req.CommentID == 0 {
+			return client.Response{Error: "comment_id required"}
 		}
-		repos, err := config.FindRepos(cfg.WorkDirs)
-		if err != nil {
-			return client.Response{OK: true}
+		if err := database.SetPRCommentApproved(req.CommentID, req.Approved); err != nil {
+			return client.Response{Error: err.Error()}
 		}
-		for _, repo := range repos {
-			slug, err := repoOwnerSlug(repo)
-			if err != nil {
-				continue
-			}
-			cmd := exec.Command("gh", "pr", "list", "--repo", slug, "--state", "open",
-				"--json", "number,title,author,url,headRefOid")
-			out, err := cmd.Output()
-			if err != nil {
-				continue
-			}
-			var prs []struct {
-				Number     int                    `json:"number"`
-				Title      string                 `json:"title"`
-				Author     struct{ Login string } `json:"author"`
-				URL        string                 `json:"url"`
-				HeadRefOid string                 `json:"headRefOid"`
-			}
-			if err := json.Unmarshal(out, &prs); err != nil {
-				continue
-			}
-			for _, pr := range prs {
-				database.UpsertPR(repo, pr.Number, pr.Title, pr.Author.Login, pr.URL, pr.HeadRefOid) //nolint:errcheck
+		return client.Response{OK: true}
+
+	case "push_pr_comment":
+		if req.CommentID == 0 {
+			return client.Response{Error: "comment_id required"}
+		}
+		comment, err := database.GetPRCommentByID(req.CommentID)
+		if err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		pr, err := database.GetPRByID(comment.PRID)
+		if err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		ownerRepo, err := repoOwnerSlug(pr.Repo)
+		if err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		cmd := exec.Command("gh", "api",
+			fmt.Sprintf("repos/%s/pulls/%d/comments", ownerRepo, pr.PRNumber),
+			"-f", "body="+comment.Body,
+			"-f", "path="+comment.FilePath,
+			"-F", fmt.Sprintf("line=%d", comment.Line),
+			"-f", "commit_id="+pr.HeadSHA,
+			"-f", "side=RIGHT",
+		)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return client.Response{Error: string(out)}
+		}
+		if err := database.SetPRCommentPushed(req.CommentID); err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		allPushed, err := database.AllPRCommentsPushed(pr.ID)
+		if err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		if allPushed {
+			if err := database.UpdatePRStatus(pr.ID, "completed"); err != nil {
+				return client.Response{Error: err.Error()}
 			}
 		}
 		return client.Response{OK: true}
@@ -752,6 +769,55 @@ func writeResp(w io.Writer, r client.Response) {
 	b, _ := json.Marshal(r)
 	b = append(b, '\n')
 	w.Write(b)
+}
+
+// pollPRs discovers open PRs across all configured repos and upserts them into
+// the database. Per-repo errors are skipped so a single bad repo does not abort
+// the whole poll.
+func pollPRs(database *db.DB) {
+	cfg, err := config.Load()
+	if err != nil {
+		return
+	}
+	repos, err := config.FindRepos(cfg.WorkDirs)
+	if err != nil {
+		return
+	}
+	for _, repo := range repos {
+		slug, err := repoOwnerSlug(repo)
+		if err != nil {
+			continue
+		}
+		cmd := exec.Command("gh", "pr", "list", "--repo", slug, "--state", "open",
+			"--json", "number,title,author,url,headRefOid")
+		out, err := cmd.Output()
+		if err != nil {
+			continue
+		}
+		var prs []struct {
+			Number     int                    `json:"number"`
+			Title      string                 `json:"title"`
+			Author     struct{ Login string } `json:"author"`
+			URL        string                 `json:"url"`
+			HeadRefOid string                 `json:"headRefOid"`
+		}
+		if err := json.Unmarshal(out, &prs); err != nil {
+			continue
+		}
+		for _, pr := range prs {
+			database.UpsertPR(repo, pr.Number, pr.Title, pr.Author.Login, pr.URL, pr.HeadRefOid) //nolint:errcheck
+		}
+	}
+}
+
+// startPRPoller runs pollPRs every 5 minutes in a background goroutine.
+func startPRPoller(database *db.DB) {
+	go func() {
+		for {
+			pollPRs(database)
+			time.Sleep(5 * time.Minute)
+		}
+	}()
 }
 
 // runPRReviewer spawns a headless kiro pr-reviewer agent in tmpDir, streams its

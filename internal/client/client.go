@@ -46,7 +46,9 @@ type Request struct {
 	NoteID     int64  `json:"note_id,omitempty"`
 	NoteBody   string `json:"note_body,omitempty"`
 	// PR review fields
-	PRID int64 `json:"pr_id,omitempty"`
+	PRID      int64 `json:"pr_id,omitempty"`
+	CommentID int64 `json:"comment_id,omitempty"`
+	Approved  bool  `json:"approved,omitempty"`
 }
 
 // Response is the daemon's reply. OK is false and Error is set on any failure.

@@ -659,6 +659,27 @@ func (d *DB) ListPRComments(prID int64) ([]PRReviewComment, error) {
 	return scanPRComments(rows)
 }
 
+// GetPRCommentByID returns the review comment with the given ID.
+func (d *DB) GetPRCommentByID(id int64) (PRReviewComment, error) {
+	var c PRReviewComment
+	var approved, pushed int
+	err := d.conn.QueryRow(
+		`SELECT id, pr_id, type, file_path, line, body, approved, pushed, created_at FROM pr_review_comments WHERE id=?`, id,
+	).Scan(&c.ID, &c.PRID, &c.Type, &c.FilePath, &c.Line, &c.Body, &approved, &pushed, &c.CreatedAt)
+	c.Approved = approved == 1
+	c.Pushed = pushed == 1
+	return c, err
+}
+
+// AllPRCommentsPushed returns true if every comment for the given PR has pushed=1.
+func (d *DB) AllPRCommentsPushed(prID int64) (bool, error) {
+	var count int
+	err := d.conn.QueryRow(
+		`SELECT COUNT(*) FROM pr_review_comments WHERE pr_id=? AND pushed=0`, prID,
+	).Scan(&count)
+	return count == 0, err
+}
+
 // SetPRCommentApproved sets the approved flag on the given comment.
 func (d *DB) SetPRCommentApproved(id int64, approved bool) error {
 	v := 0
