@@ -83,7 +83,7 @@ func (v diffView) HelpLine() string {
 func (v diffView) Init() tea.Cmd {
 	path := v.ticket.WorktreePath
 	return func() tea.Msg {
-		commits, err := git.LogList(path)
+		commits, err := git.LogList(path, v.ticket.Repo)
 		if err != nil {
 			return diffLoadedMsg{err: err.Error()}
 		}

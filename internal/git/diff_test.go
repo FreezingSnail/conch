@@ -153,7 +153,7 @@ func test_log_list(t *testing.T) {
 		}
 	}
 
-	commits, err := LogList(repo)
+	commits, err := LogList(repo, repo)
 	if err != nil {
 		t.Fatalf("LogList: %v", err)
 	}

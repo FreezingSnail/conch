@@ -94,21 +94,21 @@ func TestCtrlW_lastTab_quitsApp(t *testing.T) {
 	}
 }
 
-// TestCtrlRight_cyclesTabForward verifies ctrl+right wraps the active index.
+// TestCtrlRight_cyclesTabForward verifies ] wraps the active index forward.
 func TestCtrlRight_cyclesTabForward(t *testing.T) {
 	m := newTabsModel()
 	m, _ = sendMsg(m, tea.KeyMsg{Type: tea.KeyCtrlT}) // 2 tabs, active=1
-	m, _ = sendMsg(m, tea.KeyMsg{Type: tea.KeyCtrlRight})
+	m, _ = sendMsg(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("]")})
 	if m.active != 0 {
 		t.Errorf("want active=0 after wrap, got %d", m.active)
 	}
 }
 
-// TestCtrlLeft_cyclesTabBackward verifies ctrl+left wraps the active index.
+// TestCtrlLeft_cyclesTabBackward verifies [ wraps the active index backward.
 func TestCtrlLeft_cyclesTabBackward(t *testing.T) {
 	m := newTabsModel()
 	m, _ = sendMsg(m, tea.KeyMsg{Type: tea.KeyCtrlT}) // 2 tabs, active=1
-	m, _ = sendMsg(m, tea.KeyMsg{Type: tea.KeyCtrlLeft})
+	m, _ = sendMsg(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("[")})
 	if m.active != 0 {
 		t.Errorf("want active=0, got %d", m.active)
 	}

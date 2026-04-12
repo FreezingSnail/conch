@@ -106,8 +106,8 @@ type Commit struct {
 // LogList returns commits on the current branch that are not on the default branch.
 // Uses `git log <default>..HEAD` to scope to branch-only commits.
 // Falls back to full log if the range is empty (e.g. on the default branch itself).
-func LogList(worktreePath string) ([]Commit, error) {
-	base := DefaultBranch(worktreePath)
+func LogList(worktreePath, repoPath string) ([]Commit, error) {
+	base := DefaultBranch(repoPath)
 	out, err := run(worktreePath, "log", base+"..HEAD", "--oneline", "--no-merges")
 	if err != nil || strings.TrimSpace(out) == "" {
 		// Fall back: either base branch doesn't exist or we're on it.

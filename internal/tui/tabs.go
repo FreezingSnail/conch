@@ -54,10 +54,10 @@ func (t tabsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return t, t.tabs[t.active].top().Init()
 		case "ctrl+w":
 			return t.closeActive()
-		case "ctrl+right":
+		case "]":
 			t.active = (t.active + 1) % len(t.tabs)
 			return t, nil
-		case "ctrl+left":
+		case "[":
 			t.active = (t.active - 1 + len(t.tabs)) % len(t.tabs)
 			return t, nil
 		}
@@ -109,7 +109,7 @@ func (t tabsModel) View() string {
 		toolName = titler.Title()
 	}
 
-	helpLine := "ctrl+t new tab  ctrl+w close  ctrl+←/→ switch"
+	helpLine := "ctrl+t new tab  ctrl+w close  [ ] switch tabs"
 	if helper, ok := top.(Helper); ok {
 		helpLine = helper.HelpLine()
 	}
