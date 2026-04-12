@@ -15,6 +15,9 @@ var KiroImplementorAgent []byte
 //go:embed agents/planning.json
 var KiroPlanningAgent []byte
 
+//go:embed agents/pr-reviewer.json
+var KiroPRReviewerAgent []byte
+
 //go:embed skills/CONCH_TASK/SKILL.md
 var ConchTaskSkill []byte
 
