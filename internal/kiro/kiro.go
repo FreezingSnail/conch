@@ -105,6 +105,11 @@ func BuildReplanPrompt(ticketNumber string, ticketID int64, notes []db.FeedbackN
 	return header + "\n\nAdditional context (feedback notes from previous burrow session):\n" + strings.Join(lines, "\n")
 }
 
+// BuildPRReviewPrompt builds the prompt passed to the pr-reviewer agent.
+func BuildPRReviewPrompt(prNumber int, repo, diff string) string {
+	return fmt.Sprintf("[CONCH PR REVIEW] pr:%d repo:%s\n\n%s", prNumber, repo, diff)
+}
+
 // BuildExecutorPrompt builds the initial prompt for a headless executor session.
 func BuildExecutorPrompt(ticketNumber string, ticketID int64, tasks []db.Task) string {
 	lines := make([]string, len(tasks))

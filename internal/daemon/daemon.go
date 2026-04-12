@@ -13,12 +13,14 @@ import (
 	"github.com/FreezingSnail/conch/internal/git"
 	"github.com/FreezingSnail/conch/internal/harness"
 	"github.com/FreezingSnail/conch/internal/kiro"
+	"github.com/FreezingSnail/conch/internal/review"
 	"io"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -42,6 +44,30 @@ func seedKiroConfig(worktreePath string) {
 // SockAddr returns the canonical Unix socket path under $HOME/.conch.
 func SockAddr() string {
 	return filepath.Join(os.Getenv("HOME"), ".conch", "daemon.sock")
+}
+
+// repoOwnerSlug runs "git remote get-url origin" in repoPath and extracts the
+// "owner/repo" slug from both HTTPS (https://github.com/owner/repo.git) and
+// SSH (git@github.com:owner/repo.git) remote URL formats.
+func repoOwnerSlug(repoPath string) (string, error) {
+	cmd := exec.Command("git", "remote", "get-url", "origin")
+	cmd.Dir = repoPath
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("git remote get-url: %w", err)
+	}
+	raw := strings.TrimSpace(string(out))
+	raw = strings.TrimSuffix(raw, ".git")
+	// SSH format: git@github.com:owner/repo
+	if idx := strings.Index(raw, ":"); idx != -1 && !strings.Contains(raw[:idx], "/") {
+		return raw[idx+1:], nil
+	}
+	// HTTPS format: https://github.com/owner/repo
+	parts := strings.Split(raw, "/")
+	if len(parts) < 2 {
+		return "", fmt.Errorf("cannot parse owner/repo from %q", raw)
+	}
+	return strings.Join(parts[len(parts)-2:], "/"), nil
 }
 
 // Run listens on the Unix socket and blocks forever, spawning a goroutine per connection.
@@ -607,6 +633,88 @@ func dispatch(req client.Request, database *db.DB) client.Response {
 		}
 		return client.Response{OK: true}
 
+	case "poll_prs":
+		// poll_prs discovers open PRs across all configured repos and upserts them
+		// into the database. Per-repo errors are skipped so a single bad repo does
+		// not abort the whole poll.
+		cfg, err := config.Load()
+		if err != nil {
+			return client.Response{OK: true}
+		}
+		repos, err := config.FindRepos(cfg.WorkDirs)
+		if err != nil {
+			return client.Response{OK: true}
+		}
+		for _, repo := range repos {
+			slug, err := repoOwnerSlug(repo)
+			if err != nil {
+				continue
+			}
+			cmd := exec.Command("gh", "pr", "list", "--repo", slug, "--state", "open",
+				"--json", "number,title,author,url,headRefOid")
+			out, err := cmd.Output()
+			if err != nil {
+				continue
+			}
+			var prs []struct {
+				Number     int                    `json:"number"`
+				Title      string                 `json:"title"`
+				Author     struct{ Login string } `json:"author"`
+				URL        string                 `json:"url"`
+				HeadRefOid string                 `json:"headRefOid"`
+			}
+			if err := json.Unmarshal(out, &prs); err != nil {
+				continue
+			}
+			for _, pr := range prs {
+				database.UpsertPR(repo, pr.Number, pr.Title, pr.Author.Login, pr.URL, pr.HeadRefOid) //nolint:errcheck
+			}
+		}
+		return client.Response{OK: true}
+
+	case "list_prs":
+		prs, err := database.ListPRsByStatus(req.Status)
+		if err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		return client.Response{OK: true, PRs: prs}
+
+	case "review_start":
+		if req.PRID == 0 {
+			return client.Response{Error: "pr_id required"}
+		}
+		pr, err := database.GetPRByID(req.PRID)
+		if err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		ownerRepo, err := repoOwnerSlug(pr.Repo)
+		if err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		diffOut, err := exec.Command("gh", "pr", "diff", strconv.Itoa(pr.PRNumber), "--repo", ownerRepo).Output()
+		if err != nil {
+			return client.Response{Error: "gh pr diff: " + err.Error()}
+		}
+		prompt := kiro.BuildPRReviewPrompt(pr.PRNumber, ownerRepo, string(diffOut))
+		tmpDir, _ := os.MkdirTemp("", "conch-review-*")
+		sessionID, err := database.CreateSession(0, "kiro-pr-reviewer", "running")
+		if err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		database.UpdatePRStatus(req.PRID, "in_review") //nolint:errcheck
+		go runPRReviewer(sessionID, req.PRID, prompt, tmpDir, database)
+		return client.Response{OK: true, ID: sessionID}
+
+	case "list_pr_comments":
+		if req.PRID == 0 {
+			return client.Response{Error: "pr_id required"}
+		}
+		comments, err := database.ListPRComments(req.PRID)
+		if err != nil {
+			return client.Response{Error: err.Error()}
+		}
+		return client.Response{OK: true, PRComments: comments}
+
 	default:
 		return client.Response{Error: "unknown action"}
 	}
@@ -644,6 +752,42 @@ func writeResp(w io.Writer, r client.Response) {
 	b, _ := json.Marshal(r)
 	b = append(b, '\n')
 	w.Write(b)
+}
+
+// runPRReviewer spawns a headless kiro pr-reviewer agent in tmpDir, streams its
+// output into session logs, parses the resulting .conch-review.md, and persists
+// the comments. On success the PR status is set to "ready"; on failure it reverts
+// to "open".
+func runPRReviewer(sessionID, prID int64, prompt, tmpDir string, database *db.DB) {
+	cmd := kiro.Kiro{}.BackgroundWithAgent("pr-reviewer", prompt, tmpDir)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		database.UpdateSessionStatus(sessionID, "error") //nolint:errcheck
+		return
+	}
+	cmd.Stderr = cmd.Stdout
+	if err := cmd.Start(); err != nil {
+		database.UpdateSessionStatus(sessionID, "error")           //nolint:errcheck
+		database.AppendSessionLog(sessionID, "error", err.Error()) //nolint:errcheck
+		return
+	}
+	scanner := bufio.NewScanner(stdout)
+	for scanner.Scan() {
+		database.AppendSessionLog(sessionID, "stdout", scanner.Text()) //nolint:errcheck
+	}
+	if err := cmd.Wait(); err != nil {
+		database.UpdatePRStatus(prID, "open")                           //nolint:errcheck
+		database.UpdateSessionStatus(sessionID, "error")                //nolint:errcheck
+		database.AppendSessionLog(sessionID, "exit_error", err.Error()) //nolint:errcheck
+		return
+	}
+	// Parse the review file written by the agent and persist each comment.
+	comments, _ := review.ParseReviewFile(filepath.Join(tmpDir, ".conch-review.md"))
+	for _, c := range comments {
+		database.CreatePRComment(prID, c.Type, c.FilePath, c.Line, c.Body) //nolint:errcheck
+	}
+	database.UpdatePRStatus(prID, "ready")               //nolint:errcheck
+	database.UpdateSessionStatus(sessionID, "completed") //nolint:errcheck
 }
 
 // importTasks walks dir for *.code-task.md files, creates tasks with an
