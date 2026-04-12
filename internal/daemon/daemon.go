@@ -25,9 +25,45 @@ import (
 	"time"
 )
 
+// slugPreamble returns the slug mode preamble for the given intensity level.
+func slugPreamble(mode string) string {
+	rules := "Respond terse like smart slug. All technical substance stay. Only fluff die. " +
+		"Drop articles, filler (just/really/basically/actually/simply), pleasantries, hedging. " +
+		"Fragments permitted. Short synonyms. Technical terms exact. Code blocks normal. " +
+		"This mode MUST remain active every response."
+	switch mode {
+	case "lite":
+		rules += " Keep articles and full sentences. Professional but tight."
+	case "slugineer":
+		rules += " Abbreviate (DB/auth/config/req/res/fn/impl). Strip conjunctions. Use arrows for causality (X → Y). One word when sufficient."
+	}
+	return "## Communication Style\n\nSlug mode: " + mode + ". " + rules + "\n\n"
+}
+
+// injectSlugMode prepends a slug activation preamble to the agent's prompt field.
+// Returns b unchanged if mode is "off" or JSON cannot be parsed.
+func injectSlugMode(b []byte, mode string) []byte {
+	if mode == "off" {
+		return b
+	}
+	var agent map[string]interface{}
+	if err := json.Unmarshal(b, &agent); err != nil {
+		return b
+	}
+	prefix := slugPreamble(mode)
+	if p, ok := agent["prompt"].(string); ok {
+		agent["prompt"] = prefix + p
+	}
+	out, err := json.MarshalIndent(agent, "", "  ")
+	if err != nil {
+		return b
+	}
+	return out
+}
+
 // seedKiroConfig writes embedded kiro config files into the worktree.
 // Non-fatal: worktree is still usable without them.
-func seedKiroConfig(worktreePath string) {
+func seedKiroConfig(worktreePath, slugMode string) {
 	settingsDir := filepath.Join(worktreePath, ".kiro", "settings")
 	if err := os.MkdirAll(settingsDir, 0o755); err != nil {
 		return
@@ -38,8 +74,19 @@ func seedKiroConfig(worktreePath string) {
 	if err := os.MkdirAll(agentsDir, 0o755); err != nil {
 		return
 	}
-	os.WriteFile(filepath.Join(agentsDir, "executor.json"), assets.KiroExecutorAgent, 0o644)       //nolint:errcheck
-	os.WriteFile(filepath.Join(agentsDir, "implementor.json"), assets.KiroImplementorAgent, 0o644) //nolint:errcheck
+	os.WriteFile(filepath.Join(agentsDir, "executor.json"), injectSlugMode(assets.KiroExecutorAgent, slugMode), 0o644)       //nolint:errcheck
+	os.WriteFile(filepath.Join(agentsDir, "implementor.json"), injectSlugMode(assets.KiroImplementorAgent, slugMode), 0o644) //nolint:errcheck
+	os.WriteFile(filepath.Join(agentsDir, "planning.json"), injectSlugMode(assets.KiroPlanningAgent, slugMode), 0o644)       //nolint:errcheck
+	os.WriteFile(filepath.Join(agentsDir, "default.json"), injectSlugMode(assets.KiroDefaultAgent, slugMode), 0o644)         //nolint:errcheck
+	os.WriteFile(filepath.Join(agentsDir, "pr-reviewer.json"), injectSlugMode(assets.KiroPRReviewerAgent, slugMode), 0o644)  //nolint:errcheck
+
+	for name, data := range map[string][]byte{"slug": assets.SlugSkill, "CONCH_TASK": assets.ConchTaskSkill} {
+		dir := filepath.Join(worktreePath, ".kiro", "skills", name)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			continue
+		}
+		os.WriteFile(filepath.Join(dir, "SKILL.md"), data, 0o644) //nolint:errcheck
+	}
 }
 
 // SockAddr returns the canonical Unix socket path under $HOME/.conch.
@@ -286,7 +333,8 @@ func dispatch(req client.Request, database *db.DB) client.Response {
 		if err := database.SetTicketRepo(req.TicketID, req.Repo, wtPath); err != nil {
 			return client.Response{Error: err.Error()}
 		}
-		seedKiroConfig(wtPath)
+		slugCfg, _ := config.Load()
+		seedKiroConfig(wtPath, slugCfg.EffectiveSlugMode())
 		return client.Response{OK: true}
 
 	case "delete_ticket":
@@ -437,6 +485,7 @@ func dispatch(req client.Request, database *db.DB) client.Response {
 		if err != nil {
 			return client.Response{Error: err.Error()}
 		}
+		planCfg, _ := config.Load()
 		for _, repo := range req.Repos {
 			base := filepath.Base(repo)
 			wtPath := filepath.Join(os.Getenv("HOME"), ".conch", "worktrees", base, req.TicketNumber)
@@ -449,7 +498,7 @@ func dispatch(req client.Request, database *db.DB) client.Response {
 			if err := database.SetTicketRepo(ticketID, repo, wtPath); err != nil {
 				return client.Response{Error: err.Error()}
 			}
-			seedKiroConfig(wtPath)
+			seedKiroConfig(wtPath, planCfg.EffectiveSlugMode())
 		}
 		sessionID, err := database.CreateSession(ticketID, "kiro", "running")
 		if err != nil {
@@ -714,6 +763,8 @@ func dispatch(req client.Request, database *db.DB) client.Response {
 		}
 		prompt := kiro.BuildPRReviewPrompt(pr.PRNumber, ownerRepo, string(diffOut))
 		tmpDir, _ := os.MkdirTemp("", "conch-review-*")
+		reviewCfg, _ := config.Load()
+		seedKiroConfig(tmpDir, reviewCfg.EffectiveSlugMode())
 		sessionID, err := database.CreateSession(0, "kiro-pr-reviewer", "running")
 		if err != nil {
 			return client.Response{Error: err.Error()}
@@ -998,12 +1049,6 @@ func syncGitNote(database *db.DB, ticketID int64, commitHash string) {
 // runExecutor spawns a headless kiro executor in the ticket's worktree and
 // updates the session status when the process exits.
 func runExecutor(sessionID int64, prompt, worktreePath string, database *db.DB) {
-	agentPath := filepath.Join(os.Getenv("HOME"), ".kiro", "agents", "executor.json")
-	if _, err := os.Stat(agentPath); err != nil {
-		database.AppendSessionLog(sessionID, "error", "executor agent not found: run tooling/link.sh")
-		database.UpdateSessionStatus(sessionID, "error")
-		return
-	}
 	cmd := kiro.Kiro{}.BackgroundWithAgent("executor", prompt, worktreePath)
 	// Ensure conch binary is findable. The daemon may be launched without the
 	// user's full PATH. Prepend the Go bin dir and the daemon's own dir.

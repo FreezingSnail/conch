@@ -228,7 +228,9 @@ func (v burrowView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case burrowLogsMsg:
-		v.logLines = msg.lines
+		if len(msg.lines) > 0 {
+			v.logLines = msg.lines
+		}
 		// poll loop is driven solely by burrowLogPollMsg; don't reschedule here
 
 	case burrowLogPollMsg:
@@ -241,7 +243,9 @@ func (v burrowView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return v, tea.Batch(loadSessionsAndLogs(visible[v.cursor].ID), logPollCmd())
 
 	case burrowSessionsMsg:
-		v.sessions = msg.sessions
+		if len(msg.sessions) > 0 {
+			v.sessions = msg.sessions
+		}
 		if len(msg.lines) > 0 {
 			v.logLines = msg.lines
 		}

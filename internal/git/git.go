@@ -49,6 +49,12 @@ func WorktreeAdd(repoPath, worktreePath, branch string) error {
 		}
 	}
 	base := DefaultBranch(repoPath)
+	// On a brand-new repo there are no commits, so the base branch ref doesn't
+	// exist yet and `git worktree add` exits 128. Create an initial empty commit
+	// so the ref exists before we try to branch off it.
+	if out, _ := run(repoPath, "rev-list", "--count", "HEAD"); out == "0" || out == "" {
+		run(repoPath, "commit", "--allow-empty", "-m", "init") //nolint:errcheck
+	}
 	if _, err := run(repoPath, "worktree", "add", "-b", branch, worktreePath, base); err != nil {
 		// Branch already exists; check out without creating it.
 		_, err = run(repoPath, "worktree", "add", worktreePath, branch)

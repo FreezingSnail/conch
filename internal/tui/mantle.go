@@ -84,7 +84,7 @@ func (v mantleView) HelpLine() string {
 		if v.editing {
 			return "enter confirm  esc cancel"
 		}
-		return "↑/↓ navigate  a add  d delete  tab switch  esc back"
+		return "↑/↓ navigate  a add  d delete  s cycle-slug-mode  tab switch  esc back"
 	default:
 		return "↑/↓ navigate  enter read  tab switch  esc back"
 	}
@@ -249,6 +249,20 @@ func (v mantleView) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return v, saveConfigCmd(v.cfg)
 		}
+	case "s":
+		if v.section == mantleSettings {
+			modes := []string{"slugineer", "lite", "off"}
+			cur := v.cfg.EffectiveSlugMode()
+			next := modes[0]
+			for i, m := range modes {
+				if m == cur {
+					next = modes[(i+1)%len(modes)]
+					break
+				}
+			}
+			v.cfg.SlugMode = next
+			return v, saveConfigCmd(v.cfg)
+		}
 	}
 	return v, nil
 }
@@ -396,6 +410,7 @@ func (v mantleView) View() string {
 		} else {
 			s += "\n  a add  d delete\n"
 		}
+		s += "\n  " + StyleTitle.Render("slug_mode") + "  " + v.cfg.EffectiveSlugMode() + "  (s to cycle)\n"
 	case mantleSkills:
 		if len(v.skills) == 0 {
 			s += "  no skills found\n"

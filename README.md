@@ -48,3 +48,7 @@ go build -o conchd ./cmd/conchd
 ## Data
 
 SQLite at `~/.conch/conch.db`. Tables: `tickets`, `tasks`, `sessions`, `session_logs`.
+
+## Credits
+
+- Slug mode adapted from [caveman](https://github.com/JuliusBrussee/caveman)

@@ -22,7 +22,7 @@ func TestSaveLoad(t *testing.T) {
 	t.Setenv("HOME", dir)
 	os.MkdirAll(filepath.Join(dir, ".conch"), 0755)
 
-	want := Config{WorkDirs: []string{"/tmp/code", "/tmp/work"}}
+	want := Config{WorkDirs: []string{"/tmp/code", "/tmp/work"}, SlugMode: "lite"}
 	if err := Save(want); err != nil {
 		t.Fatal(err)
 	}
@@ -32,6 +32,18 @@ func TestSaveLoad(t *testing.T) {
 	}
 	if len(got.WorkDirs) != 2 || got.WorkDirs[0] != want.WorkDirs[0] {
 		t.Fatalf("got %v", got.WorkDirs)
+	}
+	if got.SlugMode != "lite" {
+		t.Fatalf("expected slug_mode lite, got %q", got.SlugMode)
+	}
+}
+
+func TestEffectiveSlugMode(t *testing.T) {
+	if (Config{}).EffectiveSlugMode() != "slugineer" {
+		t.Fatal("expected default slugineer")
+	}
+	if (Config{SlugMode: "off"}).EffectiveSlugMode() != "off" {
+		t.Fatal("expected off")
 	}
 }
 

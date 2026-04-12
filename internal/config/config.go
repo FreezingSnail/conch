@@ -9,6 +9,15 @@ import (
 
 type Config struct {
 	WorkDirs []string `json:"work_dirs"`
+	SlugMode string   `json:"slug_mode,omitempty"`
+}
+
+// EffectiveSlugMode returns the configured slug mode, defaulting to "slugineer".
+func (c Config) EffectiveSlugMode() string {
+	if c.SlugMode == "" {
+		return "slugineer"
+	}
+	return c.SlugMode
 }
 
 func path() string {

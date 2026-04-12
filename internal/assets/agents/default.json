@@ -1,0 +1,43 @@
+{
+  "name": "kiro_default",
+  "description": "The default agent for Kiro CLI",
+  "prompt": null,
+  "mcpServers": {},
+  "tools": [
+    "read",
+    "write",
+    "shell",
+    "grep",
+    "glob",
+    "code",
+    "web_search",
+    "web_fetch",
+    "todo_list",
+    "knowledge"
+  ],
+  "toolAliases": {},
+  "allowedTools": [
+    "read",
+    "write",
+    "shell",
+    "grep",
+    "glob",
+    "code",
+    "web_search",
+    "web_fetch",
+    "todo_list",
+    "knowledge"
+  ],
+  "resources": [
+    "skill://.kiro/skills/code-comments/SKILL.md",
+    "skill://.kiro/skills/code-module-design/SKILL.md",
+    "skill://.kiro/skills/CONCH_TASK/SKILL.md",
+    "skill://.kiro/skills/skill-builder/SKILL.md",
+    "skill://.kiro/skills/zed-workspaces/SKILL.md",
+    "skill://.kiro/skills/slug/SKILL.md"
+  ],
+  "hooks": {},
+  "toolsSettings": {},
+  "includeMcpJson": true,
+  "model": null
+}
