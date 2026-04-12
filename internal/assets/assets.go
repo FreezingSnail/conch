@@ -6,9 +6,6 @@ import "embed"
 //go:embed lsp.json
 var KiroLSPConfig []byte
 
-//go:embed agents/executor.json
-var KiroExecutorAgent []byte
-
 //go:embed agents/implementor.json
 var KiroImplementorAgent []byte
 

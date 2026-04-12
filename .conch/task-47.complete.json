@@ -1,0 +1,6 @@
+{
+  "task_id": 47,
+  "type": "chore",
+  "subject": "Delete executor agent JSON files and remove references",
+  "body": "Removed internal/assets/agents/executor.json and .kiro/agents/executor.json as the executor agent is now fully implemented in Go and no longer needs agent definition files. Removed the KiroExecutorAgent embed directive from internal/assets/assets.go and the corresponding WriteFile call from internal/daemon/daemon.go's seedKiroConfig function."
+}
