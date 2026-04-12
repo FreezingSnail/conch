@@ -1,0 +1,6 @@
+{
+  "task_id": 45,
+  "type": "chore",
+  "subject": "Wire exec_start to runGoExecutor in handler_sessions.go",
+  "body": "Task 44 already implemented the wiring: exec_start calls runGoExecutor(sessionID, ticket.ID, ticket.WorktreePath, database) directly, with the ListTasksByTicket and BuildExecutorPrompt calls removed. The kiro import is retained because plan_complete and replan_ticket still use kiro.FindSessionByCwd, kiro.BuildReplanPrompt, and kiro.Kiro{}. Build verified clean with go build ./..."
+}
