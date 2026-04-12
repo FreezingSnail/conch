@@ -6,6 +6,53 @@ import (
 	"testing"
 )
 
+// TestLoadConfig_defaults: missing file → empty Config, no error, EffectiveSlugMode defaults to "slugineer".
+func TestLoadConfig_defaults(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	c, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.WorkDirs) != 0 {
+		t.Fatalf("expected empty WorkDirs, got %v", c.WorkDirs)
+	}
+	if c.EffectiveSlugMode() != "slugineer" {
+		t.Fatalf("expected default slugineer, got %q", c.EffectiveSlugMode())
+	}
+}
+
+// TestLoadConfig_overrides: full JSON config → all fields read correctly.
+func TestLoadConfig_overrides(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	want := Config{WorkDirs: []string{"/code/a", "/code/b"}, SlugMode: "lite"}
+	if err := Save(want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.WorkDirs) != 2 || got.WorkDirs[0] != "/code/a" || got.WorkDirs[1] != "/code/b" {
+		t.Fatalf("unexpected WorkDirs: %v", got.WorkDirs)
+	}
+	if got.SlugMode != "lite" {
+		t.Fatalf("expected slug_mode lite, got %q", got.SlugMode)
+	}
+}
+
+// TestLoadConfig_missingFile: no config file → Load returns empty Config with no error.
+func TestLoadConfig_missingFile(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	c, err := Load()
+	if err != nil {
+		t.Fatalf("expected no error for missing file, got %v", err)
+	}
+	if len(c.WorkDirs) != 0 || c.SlugMode != "" {
+		t.Fatalf("expected zero-value Config, got %+v", c)
+	}
+}
+
 func TestLoadMissing(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	c, err := Load()
