@@ -17,6 +17,8 @@ type planStep int
 
 const (
 	stepTicketNum  planStep = iota // collect free-text ticket number
+	stepTitle                      // collect short title
+	stepIdea                       // collect multiline rough idea (ctrl+d to confirm)
 	stepRepoPicker                 // multi-select repos
 	stepSummary                    // show task summary after kiro exits
 )
@@ -28,6 +30,8 @@ type planningWizard struct {
 
 	// text input fields
 	ticketNum string
+	title     string
+	idea      string // multiline; ctrl+d confirms
 
 	// repo picker state
 	repos   []string
@@ -78,8 +82,10 @@ func (w planningWizard) Title() string { return "Plan" }
 // HelpLine implements Helper; returns context-sensitive keybinding hints.
 func (w planningWizard) HelpLine() string {
 	switch w.step {
-	case stepTicketNum:
+	case stepTicketNum, stepTitle:
 		return "enter next  esc back"
+	case stepIdea:
+		return "ctrl+d confirm  esc back"
 	case stepRepoPicker:
 		return "space toggle  enter confirm  esc back"
 	default:
@@ -117,7 +123,7 @@ func (w planningWizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		w.ticketID = msg.ticketID
 		w.sessionID = msg.sessionID
 		w.worktree = msg.worktree
-		prompt := kiro.BuildPrompt(w.ticketNum, w.ticketID)
+		prompt := kiro.BuildPrompt(w.ticketNum, w.ticketID, w.title, w.idea)
 		if harness.InTmux() {
 			err := harness.SpawnTmuxWindow(kiro.Kiro{}, w.ticketNum, "planning", prompt, w.worktree, w.sessionID)
 			if err != nil {
@@ -173,10 +179,38 @@ func (w planningWizard) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		w.ticketNum = applyTextInput(w.ticketNum, msg.String())
 		if msg.String() == "enter" {
 			if strings.TrimSpace(w.ticketNum) != "" {
-				w.step = stepRepoPicker
+				w.step = stepTitle
 			}
 		} else if msg.String() == "esc" {
 			return w, pop()
+		}
+	case stepTitle:
+		w.title = applyTextInput(w.title, msg.String())
+		if msg.String() == "enter" {
+			if strings.TrimSpace(w.title) != "" {
+				w.step = stepIdea
+			}
+		} else if msg.String() == "esc" {
+			w.step = stepTicketNum
+		}
+	case stepIdea:
+		switch msg.String() {
+		case "ctrl+d":
+			if strings.TrimSpace(w.idea) != "" {
+				w.step = stepRepoPicker
+			}
+		case "esc":
+			w.step = stepTitle
+		case "enter":
+			w.idea += "\n"
+		case "backspace":
+			if len(w.idea) > 0 {
+				w.idea = w.idea[:len(w.idea)-1]
+			}
+		default:
+			if len(msg.Runes) > 0 {
+				w.idea += string(msg.Runes)
+			}
 		}
 	case stepRepoPicker:
 		return w.handleRepoPicker(msg)
@@ -249,11 +283,14 @@ func (w planningWizard) selectedRepos() []string {
 // doPlanSetup sends plan_setup to the daemon and returns a Cmd.
 func (w planningWizard) doPlanSetup(repos []string) tea.Cmd {
 	ticketNum := w.ticketNum
+	title := w.title
+	idea := w.idea
 	return func() tea.Msg {
 		resp, err := client.Send(client.Request{
 			Action:       "plan_setup",
 			TicketNumber: ticketNum,
-			Title:        ticketNum,
+			Title:        title,
+			Description:  idea,
 			Repos:        repos,
 		})
 		if err != nil {
@@ -275,6 +312,10 @@ func (w planningWizard) View() string {
 	switch w.step {
 	case stepTicketNum:
 		return fmt.Sprintf("  %s\n\n%s\n", StyleTitle.Render("Plan — new ticket"), wrapInput("Ticket number: ", w.ticketNum, w.w))
+	case stepTitle:
+		return fmt.Sprintf("  %s\n\n%s\n", StyleTitle.Render(fmt.Sprintf("Plan — %s — title", w.ticketNum)), wrapInput("Title: ", w.title, w.w))
+	case stepIdea:
+		return fmt.Sprintf("  %s\n\n%s\n\n%s\n", StyleTitle.Render(fmt.Sprintf("Plan — %s — rough idea", w.ticketNum)), "  Describe what you want to build (ctrl+d when done):", renderIdeaBox(w.idea, w.w))
 	case stepRepoPicker:
 		return w.viewRepoPicker()
 	case stepSummary:
@@ -322,5 +363,16 @@ func (w planningWizard) viewSummary() string {
 			s += fmt.Sprintf("  [%s] %s\n", t.status, t.title)
 		}
 	}
+	return s
+}
+
+// renderIdeaBox renders the multiline idea buffer with a trailing cursor indicator.
+func renderIdeaBox(idea string, _ int) string {
+	lines := strings.Split(idea, "\n")
+	s := ""
+	for _, l := range lines {
+		s += "  " + l + "\n"
+	}
+	s += "  ▌"
 	return s
 }

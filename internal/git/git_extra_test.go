@@ -89,3 +89,31 @@ func contains(s, sub string) bool {
 func TestDefaultBranch_packedRefs(t *testing.T) { test_DefaultBranch_packedRefs(t) }
 func TestFilesChanged(t *testing.T)             { test_FilesChanged(t) }
 func TestCommitMessage(t *testing.T)            { test_CommitMessage(t) }
+
+// TestDefaultBranch_master: repo with only a master branch → DefaultBranch returns "master".
+func TestDefaultBranch_master(t *testing.T) {
+	requireGit(t)
+	dir := t.TempDir()
+	for _, args := range [][]string{
+		{"init", "-b", "master"},
+		{"config", "user.email", "test@test.com"},
+		{"config", "user.name", "Test"},
+		{"commit", "--allow-empty", "-m", "init"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %s", args, out)
+		}
+	}
+	if b := DefaultBranch(dir); b != "master" {
+		t.Fatalf("expected master, got %s", b)
+	}
+}
+
+// TestDefaultBranch_noRepo: non-existent path → DefaultBranch returns "master" (graceful fallback).
+func TestDefaultBranch_noRepo(t *testing.T) {
+	if b := DefaultBranch("/nonexistent/path/that/does/not/exist"); b != "master" {
+		t.Fatalf("expected master fallback, got %s", b)
+	}
+}

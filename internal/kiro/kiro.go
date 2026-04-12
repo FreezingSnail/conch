@@ -48,23 +48,36 @@ func (k Kiro) CLICommand(agent, prompt string) string {
 }
 
 // BuildPrompt formats the planning context string passed to kiro-cli.
-func BuildPrompt(ticketNumber string, ticketID int64) string {
-	return fmt.Sprintf("[CONCH PLANNING] ticket:%s id:%d", ticketNumber, ticketID)
+// title and idea are optional; non-empty values are appended as labelled lines.
+func BuildPrompt(ticketNumber string, ticketID int64, title, idea string) string {
+	s := fmt.Sprintf("[CONCH PLANNING] ticket:%s id:%d", ticketNumber, ticketID)
+	if title != "" {
+		s += "\ntitle: " + title
+	}
+	if idea != "" {
+		s += "\nidea: " + idea
+	}
+	return s
 }
 
-// BuildReplanPrompt builds the prompt for a replanning session, prepending any
-// unaddressed feedback notes as additional context. If notes is empty the
-// "Additional context" section is omitted so the prompt stays minimal.
-func BuildReplanPrompt(ticketNumber string, ticketID int64, notes []db.FeedbackNote) string {
-	header := fmt.Sprintf("[CONCH PLANNING] ticket:%s id:%d", ticketNumber, ticketID)
+// BuildReplanPrompt builds the prompt for a replanning session, including the
+// ticket title/description and any unaddressed feedback notes as context.
+func BuildReplanPrompt(ticketNumber string, ticketID int64, title, description string, notes []db.FeedbackNote) string {
+	s := fmt.Sprintf("[CONCH PLANNING] ticket:%s id:%d", ticketNumber, ticketID)
+	if title != "" {
+		s += "\ntitle: " + title
+	}
+	if description != "" {
+		s += "\nidea: " + description
+	}
 	if len(notes) == 0 {
-		return header
+		return s
 	}
 	lines := make([]string, len(notes))
 	for i, n := range notes {
 		lines[i] = fmt.Sprintf("- %s %s: %s", n.FilePath, n.HunkHeader, n.Body)
 	}
-	return header + "\n\nAdditional context (feedback notes from previous burrow session):\n" + strings.Join(lines, "\n")
+	return s + "\n\nAdditional context (feedback notes from previous burrow session):\n" + strings.Join(lines, "\n")
 }
 
 // BuildPRReviewPrompt builds the prompt passed to the pr-reviewer agent.

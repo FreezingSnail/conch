@@ -191,7 +191,7 @@ func handleSessions(req client.Request, database *db.DB) (client.Response, bool)
 		if !harness.InTmux() {
 			return client.Response{Error: "must be running inside tmux"}, true
 		}
-		prompt := kiro.BuildReplanPrompt(ticket.TicketNumber, ticket.ID, unaddressed)
+		prompt := kiro.BuildReplanPrompt(ticket.TicketNumber, ticket.ID, ticket.Title, ticket.Description, unaddressed)
 		if err := harness.SpawnTmuxWindow(kiro.Kiro{}, ticket.TicketNumber, "planning", prompt, ticket.WorktreePath, 0); err != nil {
 			return client.Response{Error: err.Error()}, true
 		}
