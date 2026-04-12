@@ -242,9 +242,15 @@ func (v burrowView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case burrowSessionsMsg:
 		v.sessions = msg.sessions
-		v.logLines = msg.lines
-		// Stop polling once the session is no longer running.
+		if len(msg.lines) > 0 {
+			v.logLines = msg.lines
+		}
+		// Clamp cursor in case ticket moved tabs.
 		visible := v.tabTickets()
+		if v.cursor >= len(visible) && len(visible) > 0 {
+			v.cursor = len(visible) - 1
+		}
+		// Stop polling once the session is no longer running.
 		if v.cursor >= len(visible) || ticketExecStatus(visible[v.cursor].ID, v.sessions) != "running" {
 			v.polling = false
 		}
@@ -343,7 +349,7 @@ func (v burrowView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return v, v.handleEnter()
 		case "l":
 			v.viewingLog = true
-			v.logScroll = len(v.logLines) - 1
+			v.logScroll = len(v.logLines) - 30
 			if v.logScroll < 0 {
 				v.logScroll = 0
 			}
@@ -456,10 +462,7 @@ func (v burrowView) View() string {
 		} else {
 			// show a window of lines around logScroll
 			const pageSize = 30
-			start := v.logScroll - pageSize/2
-			if start < 0 {
-				start = 0
-			}
+			start := v.logScroll
 			end := start + pageSize
 			if end > len(v.logLines) {
 				end = len(v.logLines)
