@@ -69,7 +69,7 @@ type Response struct {
 }
 
 // Send dials the socket, writes one JSON line, and reads one JSON line back.
-// It returns an error only on transport failure; daemon-level errors are in Response.Error.
+// Returns an error on any transport failure; daemon-level errors are in Response.Error.
 func Send(req Request) (Response, error) {
 	conn, err := net.Dial("unix", sockAddr())
 	if err != nil {
@@ -78,11 +78,19 @@ func Send(req Request) (Response, error) {
 	defer conn.Close()
 	b, _ := json.Marshal(req)
 	b = append(b, '\n')
-	conn.Write(b)
+	if _, err := conn.Write(b); err != nil {
+		return Response{}, fmt.Errorf("write: %w", err)
+	}
 	var resp Response
 	scanner := bufio.NewScanner(conn)
-	if scanner.Scan() {
-		json.Unmarshal(scanner.Bytes(), &resp)
+	if !scanner.Scan() {
+		if err := scanner.Err(); err != nil {
+			return Response{}, fmt.Errorf("read: %w", err)
+		}
+		return Response{}, fmt.Errorf("daemon closed connection")
+	}
+	if err := json.Unmarshal(scanner.Bytes(), &resp); err != nil {
+		return Response{}, fmt.Errorf("unmarshal response: %w", err)
 	}
 	return resp, nil
 }
