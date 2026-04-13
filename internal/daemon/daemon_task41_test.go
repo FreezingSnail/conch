@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/FreezingSnail/conch/internal/client"
+	"github.com/FreezingSnail/conch/internal/kiro"
 )
 
 // TestDispatch_openPR_noWorktree creates a ticket with no worktree and asserts
@@ -12,7 +13,7 @@ func TestDispatch_openPR_noWorktree(t *testing.T) {
 	database := openTestDB(t)
 	ticketID := seedTicket(t, database)
 
-	resp := dispatch(client.Request{Action: "open_pr", TicketID: ticketID}, database)
+	resp := dispatch(client.Request{Action: "open_pr", TicketID: ticketID}, database, kiro.Kiro{})
 	if resp.OK {
 		t.Fatal("expected error response, got OK=true")
 	}
@@ -26,7 +27,7 @@ func TestDispatch_openPR_noWorktree(t *testing.T) {
 func TestDispatch_createTicket_noRepo(t *testing.T) {
 	database := openTestDB(t)
 
-	resp := dispatch(client.Request{Action: "create_ticket", Title: "my ticket"}, database)
+	resp := dispatch(client.Request{Action: "create_ticket", Title: "my ticket"}, database, kiro.Kiro{})
 	if !resp.OK {
 		t.Fatalf("create_ticket: %s", resp.Error)
 	}
@@ -42,14 +43,14 @@ func TestDispatch_deleteTicket_cascades(t *testing.T) {
 	database := openTestDB(t)
 
 	// Create ticket.
-	resp := dispatch(client.Request{Action: "create_ticket", Title: "cascade ticket"}, database)
+	resp := dispatch(client.Request{Action: "create_ticket", Title: "cascade ticket"}, database, kiro.Kiro{})
 	if !resp.OK {
 		t.Fatalf("create_ticket: %s", resp.Error)
 	}
 	ticketID := resp.ID
 
 	// Create task.
-	resp = dispatch(client.Request{Action: "create_task", TicketID: ticketID, Title: "a task"}, database)
+	resp = dispatch(client.Request{Action: "create_task", TicketID: ticketID, Title: "a task"}, database, kiro.Kiro{})
 	if !resp.OK {
 		t.Fatalf("create_task: %s", resp.Error)
 	}
@@ -62,19 +63,19 @@ func TestDispatch_deleteTicket_cascades(t *testing.T) {
 		FilePath:   "main.go",
 		HunkHeader: "@@ -1 @@",
 		NoteBody:   "a note",
-	}, database)
+	}, database, kiro.Kiro{})
 	if !resp.OK {
 		t.Fatalf("create_feedback_note: %s", resp.Error)
 	}
 
 	// Delete ticket.
-	resp = dispatch(client.Request{Action: "delete_ticket", TicketID: ticketID}, database)
+	resp = dispatch(client.Request{Action: "delete_ticket", TicketID: ticketID}, database, kiro.Kiro{})
 	if !resp.OK {
 		t.Fatalf("delete_ticket: %s", resp.Error)
 	}
 
 	// list_tasks must return empty.
-	resp = dispatch(client.Request{Action: "list_tasks", TicketID: ticketID}, database)
+	resp = dispatch(client.Request{Action: "list_tasks", TicketID: ticketID}, database, kiro.Kiro{})
 	if !resp.OK {
 		t.Fatalf("list_tasks: %s", resp.Error)
 	}
@@ -83,7 +84,7 @@ func TestDispatch_deleteTicket_cascades(t *testing.T) {
 	}
 
 	// list_feedback_notes must return empty.
-	resp = dispatch(client.Request{Action: "list_feedback_notes", TicketID: ticketID}, database)
+	resp = dispatch(client.Request{Action: "list_feedback_notes", TicketID: ticketID}, database, kiro.Kiro{})
 	if !resp.OK {
 		t.Fatalf("list_feedback_notes: %s", resp.Error)
 	}

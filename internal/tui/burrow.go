@@ -9,7 +9,6 @@ import (
 	"github.com/FreezingSnail/conch/internal/client"
 	"github.com/FreezingSnail/conch/internal/db"
 	"github.com/FreezingSnail/conch/internal/harness"
-	"github.com/FreezingSnail/conch/internal/kiro"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -403,13 +402,13 @@ func (v burrowView) handleEnter() tea.Cmd {
 		}
 		if harness.InTmux() {
 			return func() tea.Msg {
-				if err := harness.SpawnTmuxPaneResume(kiro.Kiro{}, t.WorktreePath); err != nil {
+				if err := harness.SpawnTmuxPaneResume(activeHarness, t.WorktreePath); err != nil {
 					return burrowStartedMsg{err: "tmux error: " + err.Error()}
 				}
 				return nil
 			}
 		}
-		cmd := kiro.Kiro{}.Interactive()
+		cmd := activeHarness.Interactive()
 		cmd.Dir = t.WorktreePath
 		return tea.ExecProcess(cmd, func(err error) tea.Msg { return nil })
 	}

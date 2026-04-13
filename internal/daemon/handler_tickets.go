@@ -9,11 +9,12 @@ import (
 	"github.com/FreezingSnail/conch/internal/config"
 	"github.com/FreezingSnail/conch/internal/db"
 	"github.com/FreezingSnail/conch/internal/git"
+	"github.com/FreezingSnail/conch/internal/harness"
 )
 
 // handleTickets routes ticket and repo actions. Returns (resp, true) for known
 // actions, (zero, false) otherwise.
-func handleTickets(req client.Request, database *db.DB) (client.Response, bool) {
+func handleTickets(req client.Request, database *db.DB, _ harness.Harness) (client.Response, bool) {
 	switch req.Action {
 	case "create_ticket":
 		if req.Title == "" {

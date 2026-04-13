@@ -15,13 +15,13 @@ import (
 	"github.com/FreezingSnail/conch/internal/client"
 	"github.com/FreezingSnail/conch/internal/config"
 	"github.com/FreezingSnail/conch/internal/db"
-	"github.com/FreezingSnail/conch/internal/kiro"
+	"github.com/FreezingSnail/conch/internal/harness"
 	"github.com/FreezingSnail/conch/internal/review"
 )
 
 // handlePRs routes PR actions. Returns (resp, true) for known actions,
 // (zero, false) otherwise.
-func handlePRs(req client.Request, database *db.DB) (client.Response, bool) {
+func handlePRs(req client.Request, database *db.DB, h harness.Harness) (client.Response, bool) {
 	switch req.Action {
 	case "poll_prs":
 		pollPRs(database)
@@ -100,16 +100,16 @@ func handlePRs(req client.Request, database *db.DB) (client.Response, bool) {
 		if err != nil {
 			return client.Response{Error: "gh pr diff: " + err.Error()}, true
 		}
-		prompt := kiro.BuildPRReviewPrompt(pr.PRNumber, ownerRepo, string(diffOut))
+		prompt := h.PRReviewPrompt(pr.PRNumber, ownerRepo, string(diffOut))
 		tmpDir, _ := os.MkdirTemp("", "conch-review-*")
 		reviewCfg, _ := config.Load()
-		seedKiroConfig(tmpDir, reviewCfg.EffectiveSlugMode())
-		sessionID, err := database.CreateSession(0, "kiro-pr-reviewer", "running")
+		h.SeedWorktree(tmpDir, reviewCfg.EffectiveSlugMode())
+		sessionID, err := database.CreateSession(0, h.Name()+"-pr-reviewer", "running")
 		if err != nil {
 			return client.Response{Error: err.Error()}, true
 		}
 		database.UpdatePRStatus(req.PRID, "in_review") //nolint:errcheck
-		go runPRReviewer(sessionID, req.PRID, prompt, tmpDir, database)
+		go runPRReviewer(sessionID, req.PRID, prompt, tmpDir, database, h)
 		return client.Response{OK: true, ID: sessionID}, true
 
 	case "list_pr_comments":
@@ -180,8 +180,8 @@ func startPRPoller(database *db.DB) {
 // output into session logs, parses the resulting .conch-review.md, and persists
 // the comments. On success the PR status is set to "ready"; on failure it reverts
 // to "open".
-func runPRReviewer(sessionID, prID int64, prompt, tmpDir string, database *db.DB) {
-	cmd := kiro.Kiro{}.BackgroundWithAgent("pr-reviewer", prompt, tmpDir)
+func runPRReviewer(sessionID, prID int64, prompt, tmpDir string, database *db.DB, h harness.Harness) {
+	cmd := h.BackgroundWithAgent("pr-reviewer", prompt, tmpDir)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		database.UpdateSessionStatus(sessionID, "error") //nolint:errcheck

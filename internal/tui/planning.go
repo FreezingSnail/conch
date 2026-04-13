@@ -8,7 +8,6 @@ import (
 
 	"github.com/FreezingSnail/conch/internal/client"
 	"github.com/FreezingSnail/conch/internal/harness"
-	"github.com/FreezingSnail/conch/internal/kiro"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -123,9 +122,9 @@ func (w planningWizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		w.ticketID = msg.ticketID
 		w.sessionID = msg.sessionID
 		w.worktree = msg.worktree
-		prompt := kiro.BuildPrompt(w.ticketNum, w.ticketID, w.title, w.idea)
+		prompt := activeHarness.PlanningPrompt(w.ticketNum, w.ticketID, w.title, w.idea)
 		if harness.InTmux() {
-			err := harness.SpawnTmuxWindow(kiro.Kiro{}, w.ticketNum, "planning", prompt, w.worktree, w.sessionID)
+			err := harness.SpawnTmuxWindow(activeHarness, w.ticketNum, "planning", prompt, w.worktree, w.sessionID)
 			if err != nil {
 				w.status = "tmux error: " + err.Error()
 				w.step = stepRepoPicker
@@ -133,7 +132,7 @@ func (w planningWizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return w, pop()
 		}
-		cmd := kiro.Kiro{}.InteractiveWithAgent("planning", prompt, w.worktree)
+		cmd := activeHarness.InteractiveWithAgent("planning", prompt, w.worktree)
 		return w, tea.ExecProcess(cmd, func(err error) tea.Msg {
 			return kiroExitMsg{err: err}
 		})

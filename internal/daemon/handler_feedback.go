@@ -6,11 +6,12 @@ import (
 	"github.com/FreezingSnail/conch/internal/client"
 	"github.com/FreezingSnail/conch/internal/db"
 	"github.com/FreezingSnail/conch/internal/git"
+	"github.com/FreezingSnail/conch/internal/harness"
 )
 
 // handleFeedback routes feedback note actions. Returns (resp, true) for known
 // actions, (zero, false) otherwise.
-func handleFeedback(req client.Request, database *db.DB) (client.Response, bool) {
+func handleFeedback(req client.Request, database *db.DB, _ harness.Harness) (client.Response, bool) {
 	switch req.Action {
 	case "list_feedback_notes":
 		if req.TicketID == 0 {

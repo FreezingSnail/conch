@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/FreezingSnail/conch/internal/client"
+	"github.com/FreezingSnail/conch/internal/kiro"
 	"github.com/FreezingSnail/conch/internal/tui"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -25,6 +26,7 @@ func main() {
 			return
 		}
 	}
+	tui.SetHarness(kiro.Kiro{})
 	p := tea.NewProgram(tui.New(), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		log.Fatal(err)

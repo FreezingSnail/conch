@@ -5,6 +5,7 @@ import (
 
 	"github.com/FreezingSnail/conch/internal/daemon"
 	"github.com/FreezingSnail/conch/internal/db"
+	"github.com/FreezingSnail/conch/internal/kiro"
 )
 
 func main() {
@@ -13,7 +14,7 @@ func main() {
 		log.Fatal(err)
 	}
 	defer database.Close()
-	if err := daemon.Run(database); err != nil {
+	if err := daemon.Run(database, kiro.Kiro{}); err != nil {
 		log.Fatal(err)
 	}
 }

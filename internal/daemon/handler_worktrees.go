@@ -10,11 +10,12 @@ import (
 	"github.com/FreezingSnail/conch/internal/config"
 	"github.com/FreezingSnail/conch/internal/db"
 	"github.com/FreezingSnail/conch/internal/git"
+	"github.com/FreezingSnail/conch/internal/harness"
 )
 
 // handleWorktrees routes worktree actions. Returns (resp, true) for known
 // actions, (zero, false) otherwise.
-func handleWorktrees(req client.Request, database *db.DB) (client.Response, bool) {
+func handleWorktrees(req client.Request, database *db.DB, h harness.Harness) (client.Response, bool) {
 	switch req.Action {
 	case "create_worktree":
 		if req.TicketID == 0 || req.Repo == "" {
@@ -28,7 +29,7 @@ func handleWorktrees(req client.Request, database *db.DB) (client.Response, bool
 			return client.Response{Error: err.Error()}, true
 		}
 		slugCfg, _ := config.Load()
-		seedKiroConfig(wtPath, slugCfg.EffectiveSlugMode())
+		h.SeedWorktree(wtPath, slugCfg.EffectiveSlugMode())
 		return client.Response{OK: true}, true
 
 	case "remove_worktree":

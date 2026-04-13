@@ -12,7 +12,7 @@ import (
 	"sync"
 
 	"github.com/FreezingSnail/conch/internal/db"
-	"github.com/FreezingSnail/conch/internal/kiro"
+	"github.com/FreezingSnail/conch/internal/harness"
 )
 
 // commitSignal is the JSON artifact written by an implementor agent to signal
@@ -46,8 +46,8 @@ var typePrecedence = map[string]int{
 
 // runBackground streams stdout line-by-line into session_logs and updates the
 // session status to "completed" or "error" when the process exits.
-func runBackground(sessionID int64, prompt string, database *db.DB) {
-	cmd := kiro.Kiro{}.Background(prompt)
+func runBackground(sessionID int64, prompt string, database *db.DB, h harness.Harness) {
+	cmd := h.Background(prompt)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		database.UpdateSessionStatus(sessionID, "error")
@@ -81,7 +81,7 @@ func runBackground(sessionID int64, prompt string, database *db.DB) {
 // implementor goroutine per task, collects results, commits successful batches,
 // and marks tasks done or human-intervention accordingly. The session is
 // finalized to "completed" or "error" when the loop exits.
-func runGoExecutor(sessionID, ticketID int64, worktreePath string, database *db.DB) {
+func runGoExecutor(sessionID, ticketID int64, worktreePath string, database *db.DB, h harness.Harness) {
 	for {
 		tasks, err := database.ListTasksByTicket(ticketID)
 		if err != nil {
@@ -125,7 +125,7 @@ func runGoExecutor(sessionID, ticketID int64, worktreePath string, database *db.
 		var wg sync.WaitGroup
 		for _, t := range executable {
 			wg.Add(1)
-			go runImplementor(sessionID, t, worktreePath, database, results, &wg)
+			go runImplementor(sessionID, t, worktreePath, database, results, &wg, h)
 		}
 		wg.Wait()
 		close(results)
@@ -163,11 +163,11 @@ func runGoExecutor(sessionID, ticketID int64, worktreePath string, database *db.
 // its output to session logs, then reads the JSON artifact the agent writes to
 // .conch/task-<id>.complete.json. Sends a taskResult to results and calls
 // wg.Done when finished.
-func runImplementor(sessionID int64, task db.Task, worktreePath string, database *db.DB, results chan<- taskResult, wg *sync.WaitGroup) {
+func runImplementor(sessionID int64, task db.Task, worktreePath string, database *db.DB, results chan<- taskResult, wg *sync.WaitGroup, h harness.Harness) {
 	defer wg.Done()
 
-	prompt := kiro.BuildImplementorPrompt(task)
-	cmd := kiro.Kiro{}.BackgroundWithAgent("implementor", prompt, worktreePath)
+	prompt := h.ImplementorPrompt(task)
+	cmd := h.BackgroundWithAgent("implementor", prompt, worktreePath)
 
 	// Ensure conch binary is findable without the user's full PATH.
 	goBin := filepath.Join(os.Getenv("HOME"), "go", "bin")

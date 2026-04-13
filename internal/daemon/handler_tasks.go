@@ -9,11 +9,12 @@ import (
 
 	"github.com/FreezingSnail/conch/internal/client"
 	"github.com/FreezingSnail/conch/internal/db"
+	"github.com/FreezingSnail/conch/internal/harness"
 )
 
 // handleTasks routes task and dependency actions. Returns (resp, true) for known
 // actions, (zero, false) otherwise.
-func handleTasks(req client.Request, database *db.DB) (client.Response, bool) {
+func handleTasks(req client.Request, database *db.DB, _ harness.Harness) (client.Response, bool) {
 	switch req.Action {
 	case "create_task":
 		if req.TicketID == 0 || req.Title == "" {

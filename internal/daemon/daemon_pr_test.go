@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/FreezingSnail/conch/internal/client"
+	"github.com/FreezingSnail/conch/internal/kiro"
 )
 
 // TestDispatch_listPRs seeds two PRs with different statuses and asserts that
@@ -24,7 +25,7 @@ func TestDispatch_listPRs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	resp := dispatch(client.Request{Action: "list_prs", Status: "open"}, database)
+	resp := dispatch(client.Request{Action: "list_prs", Status: "open"}, database, kiro.Kiro{})
 	if !resp.OK {
 		t.Fatalf("list_prs: %s", resp.Error)
 	}
@@ -52,7 +53,7 @@ func TestDispatch_listPRComments(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	resp := dispatch(client.Request{Action: "list_pr_comments", PRID: prID}, database)
+	resp := dispatch(client.Request{Action: "list_pr_comments", PRID: prID}, database, kiro.Kiro{})
 	if !resp.OK {
 		t.Fatalf("list_pr_comments: %s", resp.Error)
 	}
@@ -66,7 +67,7 @@ func TestDispatch_listPRComments(t *testing.T) {
 func TestDispatch_pollPRs_noConfig(t *testing.T) {
 	database := openTestDB(t) // sets HOME to a temp dir with no config
 
-	resp := dispatch(client.Request{Action: "poll_prs"}, database)
+	resp := dispatch(client.Request{Action: "poll_prs"}, database, kiro.Kiro{})
 	if !resp.OK {
 		t.Fatalf("expected OK=true with no config, got error: %s", resp.Error)
 	}
@@ -87,7 +88,7 @@ func TestDispatch_setPRCommentApproved(t *testing.T) {
 	}
 
 	// Toggle approved=true.
-	resp := dispatch(client.Request{Action: "set_pr_comment_approved", CommentID: commentID, Approved: true}, database)
+	resp := dispatch(client.Request{Action: "set_pr_comment_approved", CommentID: commentID, Approved: true}, database, kiro.Kiro{})
 	if !resp.OK {
 		t.Fatalf("set_pr_comment_approved true: %s", resp.Error)
 	}
@@ -100,7 +101,7 @@ func TestDispatch_setPRCommentApproved(t *testing.T) {
 	}
 
 	// Toggle approved=false.
-	resp = dispatch(client.Request{Action: "set_pr_comment_approved", CommentID: commentID, Approved: false}, database)
+	resp = dispatch(client.Request{Action: "set_pr_comment_approved", CommentID: commentID, Approved: false}, database, kiro.Kiro{})
 	if !resp.OK {
 		t.Fatalf("set_pr_comment_approved false: %s", resp.Error)
 	}
@@ -128,7 +129,7 @@ func TestDispatch_pushPRComment_completesWhenAllPushed(t *testing.T) {
 	}
 
 	// Approve the comment via dispatch.
-	resp := dispatch(client.Request{Action: "set_pr_comment_approved", CommentID: commentID, Approved: true}, database)
+	resp := dispatch(client.Request{Action: "set_pr_comment_approved", CommentID: commentID, Approved: true}, database, kiro.Kiro{})
 	if !resp.OK {
 		t.Fatalf("set_pr_comment_approved: %s", resp.Error)
 	}

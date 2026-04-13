@@ -2,7 +2,17 @@
 // has its own push/pop stack. See tabsModel for the core logic.
 package tui
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	"github.com/FreezingSnail/conch/internal/harness"
+	tea "github.com/charmbracelet/bubbletea"
+)
+
+// activeHarness is the harness used by all TUI views. Set via SetHarness before
+// calling New.
+var activeHarness harness.Harness
+
+// SetHarness configures the harness used by all TUI views.
+func SetHarness(h harness.Harness) { activeHarness = h }
 
 // Root is the top-level BubbleTea model. It delegates all behaviour to
 // tabsModel so that the program entry point only needs to know about Root.

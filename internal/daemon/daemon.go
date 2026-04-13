@@ -11,78 +11,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/FreezingSnail/conch/internal/assets"
 	"github.com/FreezingSnail/conch/internal/client"
 	"github.com/FreezingSnail/conch/internal/db"
+	"github.com/FreezingSnail/conch/internal/harness"
 )
-
-// slugPreamble returns the slug mode preamble for the given intensity level.
-func slugPreamble(mode string) string {
-	rules := "Respond terse like smart slug. All technical substance stay. Only fluff die. " +
-		"Drop articles, filler (just/really/basically/actually/simply), pleasantries, hedging. " +
-		"Fragments permitted. Short synonyms. Technical terms exact. Code blocks normal. " +
-		"This mode MUST remain active every response."
-	switch mode {
-	case "lite":
-		rules += " Keep articles and full sentences. Professional but tight."
-	case "slugineer":
-		rules += " Abbreviate (DB/auth/config/req/res/fn/impl). Strip conjunctions. Use arrows for causality (X → Y). One word when sufficient."
-	}
-	return "## Communication Style\n\nSlug mode: " + mode + ". " + rules + "\n\n"
-}
-
-// injectSlugMode prepends a slug activation preamble to the agent's prompt field.
-// For the planning agent, slugdd skill content is also injected between the slug
-// preamble and the existing prompt. Returns b unchanged if mode is "off" or JSON
-// cannot be parsed.
-func injectSlugMode(b []byte, mode string) []byte {
-	if mode == "off" {
-		return b
-	}
-	var agent map[string]interface{}
-	if err := json.Unmarshal(b, &agent); err != nil {
-		return b
-	}
-	prefix := slugPreamble(mode)
-	if agent["name"] == "planning" {
-		prefix += string(assets.SlugddSkill) + "\n\n"
-	}
-	if p, ok := agent["prompt"].(string); ok {
-		agent["prompt"] = prefix + p
-	}
-	out, err := json.MarshalIndent(agent, "", "  ")
-	if err != nil {
-		return b
-	}
-	return out
-}
-
-// seedKiroConfig writes embedded kiro config files into the worktree.
-// Non-fatal: worktree is still usable without them.
-func seedKiroConfig(worktreePath, slugMode string) {
-	settingsDir := filepath.Join(worktreePath, ".kiro", "settings")
-	if err := os.MkdirAll(settingsDir, 0o755); err != nil {
-		return
-	}
-	os.WriteFile(filepath.Join(settingsDir, "lsp.json"), assets.KiroLSPConfig, 0o644) //nolint:errcheck
-
-	agentsDir := filepath.Join(worktreePath, ".kiro", "agents")
-	if err := os.MkdirAll(agentsDir, 0o755); err != nil {
-		return
-	}
-	os.WriteFile(filepath.Join(agentsDir, "implementor.json"), injectSlugMode(assets.KiroImplementorAgent, slugMode), 0o644) //nolint:errcheck
-	os.WriteFile(filepath.Join(agentsDir, "planning.json"), injectSlugMode(assets.KiroPlanningAgent, slugMode), 0o644)       //nolint:errcheck
-	os.WriteFile(filepath.Join(agentsDir, "default.json"), injectSlugMode(assets.KiroDefaultAgent, slugMode), 0o644)         //nolint:errcheck
-	os.WriteFile(filepath.Join(agentsDir, "pr-reviewer.json"), injectSlugMode(assets.KiroPRReviewerAgent, slugMode), 0o644)  //nolint:errcheck
-
-	for name, data := range map[string][]byte{"slug": assets.SlugSkill, "slugdd": assets.SlugddSkill, "CONCH_TASK": assets.ConchTaskSkill} {
-		dir := filepath.Join(worktreePath, ".kiro", "skills", name)
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			continue
-		}
-		os.WriteFile(filepath.Join(dir, "SKILL.md"), data, 0o644) //nolint:errcheck
-	}
-}
 
 // SockAddr returns the canonical Unix socket path under $HOME/.conch.
 func SockAddr() string {
@@ -90,7 +22,7 @@ func SockAddr() string {
 }
 
 // Run listens on the Unix socket and blocks forever, spawning a goroutine per connection.
-func Run(database *db.DB) error {
+func Run(database *db.DB, h harness.Harness) error {
 	addr := SockAddr()
 	os.Remove(addr)
 	ln, err := net.Listen("unix", addr)
@@ -105,11 +37,11 @@ func Run(database *db.DB) error {
 		if err != nil {
 			return err
 		}
-		go handle(conn, database)
+		go handle(conn, database, h)
 	}
 }
 
-func handle(conn net.Conn, database *db.DB) {
+func handle(conn net.Conn, database *db.DB, h harness.Harness) {
 	defer conn.Close()
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
@@ -118,7 +50,7 @@ func handle(conn net.Conn, database *db.DB) {
 			writeResp(conn, client.Response{Error: "invalid json"})
 			continue
 		}
-		writeResp(conn, dispatch(req, database))
+		writeResp(conn, dispatch(req, database, h))
 	}
 }
 
@@ -133,11 +65,11 @@ func ticketBranch(t db.Ticket) string {
 
 // dispatch routes a request through domain handlers. Unknown actions return an
 // error response rather than panicking.
-func dispatch(req client.Request, database *db.DB) client.Response {
+func dispatch(req client.Request, database *db.DB, h harness.Harness) client.Response {
 	if req.Action == "ping" {
 		return client.Response{OK: true}
 	}
-	handlers := []func(client.Request, *db.DB) (client.Response, bool){
+	handlers := []func(client.Request, *db.DB, harness.Harness) (client.Response, bool){
 		handleTickets,
 		handleWorktrees,
 		handleTasks,
@@ -145,8 +77,8 @@ func dispatch(req client.Request, database *db.DB) client.Response {
 		handleFeedback,
 		handlePRs,
 	}
-	for _, h := range handlers {
-		if resp, ok := h(req, database); ok {
+	for _, fn := range handlers {
+		if resp, ok := fn(req, database, h); ok {
 			return resp
 		}
 	}

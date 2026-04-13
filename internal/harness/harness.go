@@ -6,6 +6,9 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
+
+	"github.com/FreezingSnail/conch/internal/db"
 )
 
 // Harness abstracts a CLI agent that can run interactively or in the background.
@@ -23,6 +26,19 @@ type Harness interface {
 	// CLICommand returns the shell command string for the given agent and prompt,
 	// used by the shared tmux helpers to build the inner shell invocation.
 	CLICommand(agent, prompt string) string
+
+	// SeedWorktree writes any harness-specific config/agent files into the worktree.
+	// Non-fatal: worktree is still usable without them.
+	SeedWorktree(worktreePath, slugMode string)
+	// FindSession returns the harness-native session ID created in cwd after the
+	// given time, or empty string if not found / not applicable.
+	FindSession(cwd string, after time.Time) (string, error)
+
+	// Prompt builders — each harness formats prompts for its own CLI.
+	PlanningPrompt(ticketNum string, id int64, title, idea string) string
+	ReplanPrompt(ticketNum string, id int64, title, desc string, notes []db.FeedbackNote) string
+	ImplementorPrompt(task db.Task) string
+	PRReviewPrompt(prNum int, repo, diff string) string
 }
 
 // InTmux reports whether the current process is running inside a tmux session.

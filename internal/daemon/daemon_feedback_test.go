@@ -5,6 +5,7 @@ import (
 
 	"github.com/FreezingSnail/conch/internal/client"
 	"github.com/FreezingSnail/conch/internal/db"
+	"github.com/FreezingSnail/conch/internal/kiro"
 )
 
 // openTestDB opens an in-memory-equivalent test DB with HOME set to a temp dir.
@@ -42,7 +43,7 @@ func test_daemon_feedback_notes_crud(t *testing.T) {
 		FilePath:   "main.go",
 		HunkHeader: "@@ -1,3 +1,4 @@",
 		NoteBody:   "original body",
-	}, database)
+	}, database, kiro.Kiro{})
 	if !resp.OK {
 		t.Fatalf("create_feedback_note: %s", resp.Error)
 	}
@@ -55,7 +56,7 @@ func test_daemon_feedback_notes_crud(t *testing.T) {
 	resp = dispatch(client.Request{
 		Action:   "list_feedback_notes",
 		TicketID: ticketID,
-	}, database)
+	}, database, kiro.Kiro{})
 	if !resp.OK {
 		t.Fatalf("list_feedback_notes: %s", resp.Error)
 	}
@@ -73,7 +74,7 @@ func test_daemon_feedback_notes_crud(t *testing.T) {
 		CommitHash: "abc123",
 		NoteID:     noteID,
 		NoteBody:   "updated body",
-	}, database)
+	}, database, kiro.Kiro{})
 	if !resp.OK {
 		t.Fatalf("update_feedback_note: %s", resp.Error)
 	}
@@ -82,7 +83,7 @@ func test_daemon_feedback_notes_crud(t *testing.T) {
 	resp = dispatch(client.Request{
 		Action:   "list_feedback_notes",
 		TicketID: ticketID,
-	}, database)
+	}, database, kiro.Kiro{})
 	if resp.FeedbackNotes[0].Body != "updated body" {
 		t.Fatalf("expected updated body, got %q", resp.FeedbackNotes[0].Body)
 	}
@@ -93,7 +94,7 @@ func test_daemon_feedback_notes_crud(t *testing.T) {
 		TicketID:   ticketID,
 		CommitHash: "abc123",
 		NoteID:     noteID,
-	}, database)
+	}, database, kiro.Kiro{})
 	if !resp.OK {
 		t.Fatalf("delete_feedback_note: %s", resp.Error)
 	}
@@ -102,7 +103,7 @@ func test_daemon_feedback_notes_crud(t *testing.T) {
 	resp = dispatch(client.Request{
 		Action:   "list_feedback_notes",
 		TicketID: ticketID,
-	}, database)
+	}, database, kiro.Kiro{})
 	if len(resp.FeedbackNotes) != 0 {
 		t.Fatalf("expected 0 notes after delete, got %d", len(resp.FeedbackNotes))
 	}
@@ -122,7 +123,7 @@ func test_daemon_mark_notes_addressed(t *testing.T) {
 			FilePath:   "main.go",
 			HunkHeader: "@@ -1 @@",
 			NoteBody:   body,
-		}, database)
+		}, database, kiro.Kiro{})
 		if !resp.OK {
 			t.Fatalf("create_feedback_note: %s", resp.Error)
 		}
@@ -132,7 +133,7 @@ func test_daemon_mark_notes_addressed(t *testing.T) {
 	resp := dispatch(client.Request{
 		Action:   "mark_notes_addressed",
 		TicketID: ticketID,
-	}, database)
+	}, database, kiro.Kiro{})
 	if !resp.OK {
 		t.Fatalf("mark_notes_addressed: %s", resp.Error)
 	}
@@ -141,7 +142,7 @@ func test_daemon_mark_notes_addressed(t *testing.T) {
 	resp = dispatch(client.Request{
 		Action:   "list_feedback_notes",
 		TicketID: ticketID,
-	}, database)
+	}, database, kiro.Kiro{})
 	if len(resp.FeedbackNotes) != 2 {
 		t.Fatalf("expected 2 notes, got %d", len(resp.FeedbackNotes))
 	}
@@ -182,7 +183,7 @@ func test_replan_ticket_marks_addressed(t *testing.T) {
 	// after MarkNotesAddressed, which is the behaviour under test.
 	t.Setenv("TMUX", "/tmp/tmux-test,0,0")
 
-	dispatch(client.Request{Action: "replan_ticket", TicketID: ticketID}, database)
+	dispatch(client.Request{Action: "replan_ticket", TicketID: ticketID}, database, kiro.Kiro{})
 
 	// All notes must be addressed regardless of the tmux spawn outcome.
 	notes, err := database.ListFeedbackNotesByTicket(ticketID)

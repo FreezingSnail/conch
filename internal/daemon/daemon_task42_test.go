@@ -4,12 +4,13 @@ import (
 	"testing"
 
 	"github.com/FreezingSnail/conch/internal/client"
+	"github.com/FreezingSnail/conch/internal/kiro"
 )
 
 // TestDispatch_ping: action="ping" → OK=true.
 func TestDispatch_ping(t *testing.T) {
 	database := openTestDB(t)
-	resp := dispatch(client.Request{Action: "ping"}, database)
+	resp := dispatch(client.Request{Action: "ping"}, database, kiro.Kiro{})
 	if !resp.OK {
 		t.Fatalf("expected OK=true, got error: %s", resp.Error)
 	}
@@ -18,7 +19,7 @@ func TestDispatch_ping(t *testing.T) {
 // TestDispatch_unknownAction: unknown action → Error="unknown action".
 func TestDispatch_unknownAction(t *testing.T) {
 	database := openTestDB(t)
-	resp := dispatch(client.Request{Action: "nonexistent"}, database)
+	resp := dispatch(client.Request{Action: "nonexistent"}, database, kiro.Kiro{})
 	if resp.OK {
 		t.Fatal("expected OK=false for unknown action")
 	}
@@ -30,7 +31,7 @@ func TestDispatch_unknownAction(t *testing.T) {
 // TestDispatch_listTickets_empty: list_tickets on empty DB → OK=true, empty Tickets slice.
 func TestDispatch_listTickets_empty(t *testing.T) {
 	database := openTestDB(t)
-	resp := dispatch(client.Request{Action: "list_tickets"}, database)
+	resp := dispatch(client.Request{Action: "list_tickets"}, database, kiro.Kiro{})
 	if !resp.OK {
 		t.Fatalf("list_tickets: %s", resp.Error)
 	}
@@ -44,7 +45,7 @@ func TestDispatch_createAndListTasks(t *testing.T) {
 	database := openTestDB(t)
 	ticketID := seedTicket(t, database)
 
-	resp := dispatch(client.Request{Action: "create_task", TicketID: ticketID, Title: "my task"}, database)
+	resp := dispatch(client.Request{Action: "create_task", TicketID: ticketID, Title: "my task"}, database, kiro.Kiro{})
 	if !resp.OK {
 		t.Fatalf("create_task: %s", resp.Error)
 	}
@@ -53,7 +54,7 @@ func TestDispatch_createAndListTasks(t *testing.T) {
 		t.Fatal("expected non-zero task ID")
 	}
 
-	resp = dispatch(client.Request{Action: "list_tasks", TicketID: ticketID}, database)
+	resp = dispatch(client.Request{Action: "list_tasks", TicketID: ticketID}, database, kiro.Kiro{})
 	if !resp.OK {
 		t.Fatalf("list_tasks: %s", resp.Error)
 	}
