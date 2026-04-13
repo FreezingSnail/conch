@@ -70,7 +70,6 @@ func seedKiroConfig(worktreePath, slugMode string) {
 	if err := os.MkdirAll(agentsDir, 0o755); err != nil {
 		return
 	}
-	os.WriteFile(filepath.Join(agentsDir, "executor.json"), injectSlugMode(assets.KiroExecutorAgent, slugMode), 0o644)       //nolint:errcheck
 	os.WriteFile(filepath.Join(agentsDir, "implementor.json"), injectSlugMode(assets.KiroImplementorAgent, slugMode), 0o644) //nolint:errcheck
 	os.WriteFile(filepath.Join(agentsDir, "planning.json"), injectSlugMode(assets.KiroPlanningAgent, slugMode), 0o644)       //nolint:errcheck
 	os.WriteFile(filepath.Join(agentsDir, "default.json"), injectSlugMode(assets.KiroDefaultAgent, slugMode), 0o644)         //nolint:errcheck

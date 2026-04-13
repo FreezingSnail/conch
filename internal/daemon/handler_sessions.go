@@ -154,16 +154,11 @@ func handleSessions(req client.Request, database *db.DB) (client.Response, bool)
 				return client.Response{Error: "executor already running for this ticket"}, true
 			}
 		}
-		tasks, err := database.ListTasksByTicket(req.TicketID)
-		if err != nil {
-			return client.Response{Error: err.Error()}, true
-		}
-		prompt := kiro.BuildExecutorPrompt(ticket.TicketNumber, ticket.ID, tasks)
 		sessionID, err := database.CreateSession(req.TicketID, "kiro-executor", "running")
 		if err != nil {
 			return client.Response{Error: err.Error()}, true
 		}
-		go runExecutor(sessionID, prompt, ticket.WorktreePath, database)
+		go runGoExecutor(sessionID, req.TicketID, ticket.WorktreePath, database)
 		return client.Response{OK: true, ID: sessionID}, true
 
 	case "replan_ticket":

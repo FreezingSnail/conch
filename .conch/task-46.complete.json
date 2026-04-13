@@ -1,0 +1,6 @@
+{
+  "task_id": 46,
+  "type": "docs",
+  "subject": "Update implementor prompt to write artifact file instead of stdout",
+  "body": "The implementor agent's Completion section previously instructed the agent to print a TASK COMPLETE block to stdout. The Go executor reads a JSON artifact from .conch/task-<id>.complete.json instead, so the prompt was updated in both internal/assets/agents/implementor.json and .kiro/agents/implementor.json to instruct the agent to write that JSON file as its final step."
+}

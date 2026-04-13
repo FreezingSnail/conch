@@ -69,3 +69,29 @@ func TestBuildReplanPromptWithNotes(t *testing.T)     { test_build_replan_prompt
 func TestBuildReplanPromptMultipleNotes(t *testing.T) { test_build_replan_prompt_multiple_notes(t) }
 func TestBuildPromptWithTitleAndIdea(t *testing.T)    { test_build_prompt_with_title_and_idea(t) }
 func TestBuildPromptEmptyTitleIdea(t *testing.T)      { test_build_prompt_empty_title_idea(t) }
+
+// test_build_implementor_prompt: task with id=42, title="do thing", body="details" →
+// output contains header, title, and body.
+func test_build_implementor_prompt(t *testing.T) {
+	task := db.Task{ID: 42, Title: "do thing", Body: "details"}
+	got := BuildImplementorPrompt(task)
+	for _, want := range []string{"[CONCH TASK] task_id:42", "title:do thing", "details"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected %q in prompt, got: %q", want, got)
+		}
+	}
+}
+
+// test_invalid_input: empty body → header and title lines still present.
+func test_invalid_input(t *testing.T) {
+	task := db.Task{ID: 1, Title: "empty body task", Body: ""}
+	got := BuildImplementorPrompt(task)
+	for _, want := range []string{"[CONCH TASK] task_id:1", "title:empty body task"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected %q in prompt, got: %q", want, got)
+		}
+	}
+}
+
+func TestBuildImplementorPrompt(t *testing.T) { test_build_implementor_prompt(t) }
+func TestInvalidInput(t *testing.T)           { test_invalid_input(t) }

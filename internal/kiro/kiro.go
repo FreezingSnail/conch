@@ -85,12 +85,8 @@ func BuildPRReviewPrompt(prNumber int, repo, diff string) string {
 	return fmt.Sprintf("[CONCH PR REVIEW] pr:%d repo:%s\n\n%s", prNumber, repo, diff)
 }
 
-// BuildExecutorPrompt builds the initial prompt for a headless executor session.
-func BuildExecutorPrompt(ticketNumber string, ticketID int64, tasks []db.Task) string {
-	lines := make([]string, len(tasks))
-	for i, t := range tasks {
-		lines[i] = fmt.Sprintf("  [%s] id:%d %s", t.Status, t.ID, t.Title)
-	}
-	return fmt.Sprintf("[CONCH EXECUTOR] ticket:%s id:%d\ntasks:\n%s",
-		ticketNumber, ticketID, strings.Join(lines, "\n"))
+// BuildImplementorPrompt builds the prompt passed to an implementor kiro session.
+// Format: [CONCH TASK] task_id:<id>\ntitle:<title>\n\n<body>
+func BuildImplementorPrompt(task db.Task) string {
+	return fmt.Sprintf("[CONCH TASK] task_id:%d\ntitle:%s\n\n%s", task.ID, task.Title, task.Body)
 }
