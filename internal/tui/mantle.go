@@ -50,6 +50,11 @@ type mantleView struct {
 	cfg     config.Config
 	editing bool   // adding a new work_dir
 	input   string // text being typed
+	// search
+	searchActive  bool
+	searchQuery   string
+	searchMatches []int // line indices with matches
+	searchIdx     int   // current match index
 }
 
 func (v mantleView) width() int {
@@ -67,6 +72,9 @@ type mantleLoadedMsg struct {
 	cfg      config.Config
 }
 
+// mantleOpenDocsMsg instructs mantle to open the docs reader at a named section heading.
+type mantleOpenDocsMsg struct{ section string }
+
 func newMantleView() mantleView { return mantleView{} }
 
 // Title implements Titler; used by the tab bar chrome.
@@ -75,7 +83,10 @@ func (v mantleView) Title() string { return "Mantle" }
 // HelpLine implements Helper; returns context-sensitive keybinding hints.
 func (v mantleView) HelpLine() string {
 	if v.content != "" {
-		return "↑/↓ scroll  esc back"
+		if v.searchActive {
+			return "type to search  enter/esc close search  n/N cycle matches"
+		}
+		return "↑/↓ scroll  / search  n/N cycle matches  esc back"
 	}
 	switch v.section {
 	case mantleDocs:
@@ -157,7 +168,7 @@ func readFileUpward(name string) string {
 func (v mantleView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		v.h = msg.Height - 6
+		v.h = msg.Height - 4 // match chrome body height
 		v.w = msg.Width
 	case mantleLoadedMsg:
 		v.agents = msg.agents
@@ -172,6 +183,16 @@ func (v mantleView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		v.title = msg.title
 		v.scroll = 0
 		v.rendered = renderMarkdown(msg.content, v.width())
+		v.clearSearch()
+	case mantleOpenDocsMsg:
+		// Ensure readme is loaded; if not yet, we'll handle after load.
+		// If already loaded, open docs reader and scroll to section.
+		if v.readme != "" && v.readme != "(not found)" {
+			v.openDocsAtSection(msg.section)
+		} else {
+			// Store pending section in title temporarily; resolved after load.
+			v.title = "##pending:" + msg.section
+		}
 	case tea.KeyMsg:
 		if v.content != "" {
 			return v.handleReaderKey(msg)
@@ -181,7 +202,31 @@ func (v mantleView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return v.handleNavKey(msg)
 	}
+	// Handle pending deep-link after readme loads.
+	if strings.HasPrefix(v.title, "##pending:") && v.readme != "" && v.readme != "(not found)" {
+		section := strings.TrimPrefix(v.title, "##pending:")
+		v.title = ""
+		v.openDocsAtSection(section)
+	}
 	return v, nil
+}
+
+// openDocsAtSection opens the docs reader and scrolls to the first line matching "## <section>".
+func (v *mantleView) openDocsAtSection(section string) {
+	v.content = v.readme
+	v.title = "README"
+	v.rendered = renderMarkdown(v.readme, v.width())
+	v.clearSearch()
+
+	// Scroll to the heading line.
+	heading := "## " + section
+	lines := strings.Split(v.rendered, "\n")
+	for i, line := range lines {
+		if strings.Contains(line, section) && strings.Contains(strings.ToLower(line), strings.ToLower(heading[3:])) {
+			v.scroll = i
+			break
+		}
+	}
 }
 
 func (v mantleView) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -218,6 +263,7 @@ func (v mantleView) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			v.title = a.Name
 			v.scroll = 0
 			v.rendered = renderMarkdown(content, v.width())
+			v.clearSearch()
 			return v, nil
 		case mantleSkills:
 			if len(v.skills) == 0 {
@@ -230,11 +276,13 @@ func (v mantleView) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			v.title = "README"
 			v.scroll = 0
 			v.rendered = renderMarkdown(v.readme, v.width())
+			v.clearSearch()
 		case mantleSettings:
 			v.content = v.settings
 			v.title = "Settings"
 			v.scroll = 0
 			v.rendered = v.settings // plain text, no markdown rendering
+			v.clearSearch()
 		}
 	case "a":
 		if v.section == mantleSettings {
@@ -269,13 +317,10 @@ func (v mantleView) handleNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 type mantleOpenMsg struct{ title, content string }
 
-// agentDetailContent builds a markdown document for an agent:
-// a table of metadata fields followed by the prompt rendered as markdown.
+// agentDetailContent builds a markdown document for an agent.
 func agentDetailContent(a agentDef) string {
 	var sb strings.Builder
 	sb.WriteString("# " + a.Name + "\n\n")
-
-	// metadata table
 	sb.WriteString("| Field | Value |\n|---|---|\n")
 	sb.WriteString("| description | " + strings.ReplaceAll(a.Description, "\n", " ") + " |\n")
 	if len(a.Tools) > 0 {
@@ -288,8 +333,6 @@ func agentDetailContent(a agentDef) string {
 		sb.WriteString("| mcpServers | " + strings.ReplaceAll(string(a.MCPServers), "\n", " ") + " |\n")
 	}
 	sb.WriteString("\n---\n\n")
-
-	// prompt as markdown
 	sb.WriteString(a.Prompt)
 	return sb.String()
 }
@@ -339,12 +382,32 @@ func (v mantleView) handleSettingsInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (v mantleView) handleReaderKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Search bar active: capture typing.
+	if v.searchActive {
+		switch msg.String() {
+		case "esc", "enter":
+			v.searchActive = false
+		case "backspace":
+			if len(v.searchQuery) > 0 {
+				v.searchQuery = v.searchQuery[:len(v.searchQuery)-1]
+				v.rebuildMatches()
+			}
+		default:
+			if len(msg.String()) == 1 {
+				v.searchQuery += msg.String()
+				v.rebuildMatches()
+			}
+		}
+		return v, nil
+	}
+
 	lines := strings.Split(v.rendered, "\n")
 	switch msg.String() {
 	case "esc", "q":
 		v.content = ""
 		v.rendered = ""
 		v.title = ""
+		v.clearSearch()
 	case "up", "k":
 		if v.scroll > 0 {
 			v.scroll--
@@ -353,8 +416,50 @@ func (v mantleView) handleReaderKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if v.scroll < len(lines)-1 {
 			v.scroll++
 		}
+	case "/":
+		v.searchActive = true
+		v.searchQuery = ""
+		v.rebuildMatches()
+	case "n":
+		if len(v.searchMatches) > 0 {
+			v.searchIdx = (v.searchIdx + 1) % len(v.searchMatches)
+			v.scroll = v.searchMatches[v.searchIdx]
+		}
+	case "N":
+		if len(v.searchMatches) > 0 {
+			v.searchIdx = (v.searchIdx - 1 + len(v.searchMatches)) % len(v.searchMatches)
+			v.scroll = v.searchMatches[v.searchIdx]
+		}
 	}
 	return v, nil
+}
+
+// rebuildMatches scans rendered lines for searchQuery and updates searchMatches.
+func (v *mantleView) rebuildMatches() {
+	v.searchMatches = nil
+	v.searchIdx = 0
+	if v.searchQuery == "" {
+		return
+	}
+	q := strings.ToLower(v.searchQuery)
+	lines := strings.Split(v.rendered, "\n")
+	for i, line := range lines {
+		if strings.Contains(strings.ToLower(line), q) {
+			v.searchMatches = append(v.searchMatches, i)
+		}
+	}
+	// Auto-scroll to first match.
+	if len(v.searchMatches) > 0 {
+		v.scroll = v.searchMatches[0]
+	}
+}
+
+// clearSearch resets all search state.
+func (v *mantleView) clearSearch() {
+	v.searchActive = false
+	v.searchQuery = ""
+	v.searchMatches = nil
+	v.searchIdx = 0
 }
 
 func (v mantleView) View() string {
@@ -362,7 +467,6 @@ func (v mantleView) View() string {
 		return v.viewReader()
 	}
 
-	// Tab bar: active tab uses accent colour, inactive tabs are dimmed.
 	var s string
 	s += "  " + StyleTitle.Render("Mantle") + "\n\n"
 	for i, name := range mantleSectionNames {
@@ -429,7 +533,7 @@ func (v mantleView) View() string {
 
 func (v mantleView) viewReader() string {
 	lines := strings.Split(v.rendered, "\n")
-	pageH := v.h
+	pageH := v.h - 4 // title line + blank + status line + blank
 	if pageH < 5 {
 		pageH = 20
 	}
@@ -437,10 +541,44 @@ func (v mantleView) viewReader() string {
 	if end > len(lines) {
 		end = len(lines)
 	}
-	s := "  " + StyleTitle.Render("Mantle — "+v.title) + "\n\n"
-	s += strings.Join(lines[v.scroll:end], "\n")
-	s += fmt.Sprintf("\n\n  line %d/%d\n", v.scroll+1, len(lines))
-	return s
+
+	matchSet := make(map[int]bool, len(v.searchMatches))
+	for _, idx := range v.searchMatches {
+		matchSet[idx] = true
+	}
+	// Current match gets a distinct indicator.
+	currentMatch := -1
+	if len(v.searchMatches) > 0 {
+		currentMatch = v.searchMatches[v.searchIdx]
+	}
+
+	var sb strings.Builder
+	sb.WriteString("  " + StyleTitle.Render("Mantle — "+v.title) + "\n\n")
+	for i, line := range lines[v.scroll:end] {
+		absIdx := v.scroll + i
+		if absIdx == currentMatch {
+			sb.WriteString(StyleHighlight.Bold(true).Render(line) + "\n")
+		} else if matchSet[absIdx] {
+			sb.WriteString(StyleHighlight.Render(line) + "\n")
+		} else {
+			sb.WriteString(line + "\n")
+		}
+	}
+
+	// Status line: scroll position + search info.
+	status := fmt.Sprintf("line %d/%d", v.scroll+1, len(lines))
+	if v.searchQuery != "" {
+		if len(v.searchMatches) == 0 {
+			status += fmt.Sprintf("  search: %q  (no matches)", v.searchQuery)
+		} else {
+			status += fmt.Sprintf("  search: %q  %d/%d", v.searchQuery, v.searchIdx+1, len(v.searchMatches))
+		}
+	}
+	if v.searchActive {
+		status = "search: " + v.searchQuery + "█"
+	}
+	sb.WriteString("\n  " + status + "\n")
+	return sb.String()
 }
 
 func renderMarkdown(md string, width int) string {

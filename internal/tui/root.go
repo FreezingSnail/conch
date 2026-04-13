@@ -31,6 +31,12 @@ type pushMsg struct{ model tea.Model }
 // popMsg pops the current view from the active tab's stack.
 type popMsg struct{}
 
+// openTabMsg opens a new tab with model as its root, then dispatches followUp into it.
+type openTabMsg struct {
+	model    tea.Model
+	followUp tea.Msg
+}
+
 // push returns a Cmd that navigates to m by pushing it onto the active stack.
 func push(m tea.Model) tea.Cmd {
 	return func() tea.Msg { return pushMsg{model: m} }
@@ -39,4 +45,14 @@ func push(m tea.Model) tea.Cmd {
 // pop returns a Cmd that navigates back by popping the current view.
 func pop() tea.Cmd {
 	return func() tea.Msg { return popMsg{} }
+}
+
+// openMantleDocs opens a new tab with the mantle view scrolled to the given README section.
+func openMantleDocs(section string) tea.Cmd {
+	return func() tea.Msg {
+		return openTabMsg{
+			model:    newMantleView(),
+			followUp: mantleOpenDocsMsg{section: section},
+		}
+	}
 }

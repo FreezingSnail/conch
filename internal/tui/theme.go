@@ -61,3 +61,8 @@ var StyleBorder = lipgloss.NewStyle().
 // StyleBody is a pass-through style for content areas; it applies no decoration
 // so callers can compose it with width/height constraints without visual side effects.
 var StyleBody = lipgloss.NewStyle()
+
+// StyleHighlight renders search match lines with a highlighted background.
+var StyleHighlight = lipgloss.NewStyle().
+	Background(lipgloss.Color("#4c3f6e")).
+	Foreground(lipgloss.Color("#ffffff"))

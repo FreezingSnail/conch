@@ -54,6 +54,15 @@ func (t tabsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return t, t.tabs[t.active].top().Init()
 		case "ctrl+w":
 			return t.closeActive()
+		case "?":
+			section := "Quickstart"
+			top := t.tabs[t.active].top()
+			if titler, ok := top.(Titler); ok {
+				if titler.Title() != "conch" {
+					section = titler.Title()
+				}
+			}
+			return t, openMantleDocs(section)
 		case "]":
 			t.active = (t.active + 1) % len(t.tabs)
 			return t, nil
@@ -71,6 +80,22 @@ func (t tabsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		t.tabs[t.active].stack = append(t.tabs[t.active].stack, m)
 		w, h := t.w, t.h
 		return t, tea.Batch(m.Init(), func() tea.Msg { return tea.WindowSizeMsg{Width: w, Height: h} })
+
+	case openTabMsg:
+		// Open a new tab with msg.model, then forward msg.followUp into it.
+		name := "mantle"
+		if titler, ok := msg.model.(Titler); ok {
+			name = titler.Title()
+		}
+		t.tabs = append(t.tabs, tab{name: name, stack: []tea.Model{msg.model}})
+		t.active = len(t.tabs) - 1
+		w, h := t.w, t.h
+		followUp := msg.followUp
+		return t, tea.Batch(
+			msg.model.Init(),
+			func() tea.Msg { return tea.WindowSizeMsg{Width: w, Height: h} },
+			func() tea.Msg { return followUp },
+		)
 
 	case popMsg:
 		stack := t.tabs[t.active].stack

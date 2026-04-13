@@ -34,7 +34,7 @@ func newMenu() menu { return menu{} }
 func (m menu) Title() string { return "conch" }
 
 func (m menu) HelpLine() string {
-	return "↑/↓ navigate  enter select  shortcut jump  ctrl+t new tab  q quit"
+	return "↑/↓ navigate  enter select  shortcut jump  ? docs  ctrl+t new tab  q quit"
 }
 
 func (m menu) Init() tea.Cmd { return nil }
