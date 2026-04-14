@@ -7,6 +7,7 @@
   "resources": [
     "skill://tooling/skills/CONCH_TASK/SKILL.md",
     "skill://.kiro/skills/code-module-design/SKILL.md",
-    "skill://.kiro/skills/code-comments/SKILL.md"
+    "skill://.kiro/skills/code-comments/SKILL.md",
+    "skill://tooling/skills/wenyan-ultra/SKILL.md"
   ]
 }
