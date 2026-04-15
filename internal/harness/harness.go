@@ -30,6 +30,8 @@ type Harness interface {
 	// SeedWorktree writes any harness-specific config/agent files into the worktree.
 	// Non-fatal: worktree is still usable without them.
 	SeedWorktree(worktreePath, slugMode string)
+	// SeedWorktreeWithWenyan is like SeedWorktree but also injects wenyan-ultra thinking mode.
+	SeedWorktreeWithWenyan(worktreePath, slugMode string, wenyan bool)
 	// FindSession returns the harness-native session ID created in cwd after the
 	// given time, or empty string if not found / not applicable.
 	FindSession(cwd string, after time.Time) (string, error)

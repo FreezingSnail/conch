@@ -107,7 +107,7 @@ func handleSessions(req client.Request, database *db.DB, h harness.Harness) (cli
 			if err := database.SetTicketRepo(ticketID, repo, wtPath); err != nil {
 				return client.Response{Error: err.Error()}, true
 			}
-			h.SeedWorktree(wtPath, planCfg.EffectiveSlugMode())
+			h.SeedWorktreeWithWenyan(wtPath, planCfg.EffectiveSlugMode(), planCfg.WenyanMode)
 		}
 		sessionID, err := database.CreateSession(ticketID, h.Name(), "running")
 		if err != nil {

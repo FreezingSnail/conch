@@ -103,7 +103,7 @@ func handlePRs(req client.Request, database *db.DB, h harness.Harness) (client.R
 		prompt := h.PRReviewPrompt(pr.PRNumber, ownerRepo, string(diffOut))
 		tmpDir, _ := os.MkdirTemp("", "conch-review-*")
 		reviewCfg, _ := config.Load()
-		h.SeedWorktree(tmpDir, reviewCfg.EffectiveSlugMode())
+		h.SeedWorktreeWithWenyan(tmpDir, reviewCfg.EffectiveSlugMode(), reviewCfg.WenyanMode)
 		sessionID, err := database.CreateSession(0, h.Name()+"-pr-reviewer", "running")
 		if err != nil {
 			return client.Response{Error: err.Error()}, true

@@ -8,8 +8,9 @@ import (
 )
 
 type Config struct {
-	WorkDirs []string `json:"work_dirs"`
-	SlugMode string   `json:"slug_mode,omitempty"`
+	WorkDirs   []string `json:"work_dirs"`
+	SlugMode   string   `json:"slug_mode,omitempty"`
+	WenyanMode bool     `json:"wenyan_mode,omitempty"`
 }
 
 // EffectiveSlugMode returns the configured slug mode, defaulting to "slugineer".

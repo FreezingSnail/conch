@@ -263,6 +263,7 @@ In-app documentation and configuration browser. Four sections navigable via `tab
 | `a` | Add work dir |
 | `d` | Delete selected work dir |
 | `s` | Cycle slug mode (`slugineer` → `lite` → `off`) |
+| `w` | Toggle wenyan mode (`on` / `off`) |
 
 ---
 
@@ -318,7 +319,8 @@ Config file: `~/.conch/config.json`
 ```json
 {
   "work_dirs": ["/path/to/repo1", "/path/to/repo2"],
-  "slug_mode": "slugineer"
+  "slug_mode": "slugineer",
+  "wenyan_mode": true
 }
 ```
 
@@ -326,6 +328,7 @@ Config file: `~/.conch/config.json`
 |-------|-------------|
 | `work_dirs` | Parent directories conch scans one level deep for git repos (e.g. `~/code/`) |
 | `slug_mode` | LLM response verbosity: `slugineer` (default), `lite`, `off` |
+| `wenyan_mode` | When `true`, injects wenyan-ultra internal thinking mode into all agents. Cuts reasoning token usage ~80%. Default: `false` |
 
 Edit via **Mantle → Settings** or directly in the file. Changes take effect on next load.
 

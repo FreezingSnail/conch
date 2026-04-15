@@ -27,6 +27,12 @@ var SlugSkill []byte
 //go:embed skills/slugdd/SKILL.md
 var SlugddSkill []byte
 
+//go:embed skills/wenyan-ultra/SKILL.md
+var WenyanUltraSkill []byte
+
+//go:embed agents/slugineer.json
+var KiroSlugineeerAgent []byte
+
 //go:embed agents
 var Agents embed.FS
 

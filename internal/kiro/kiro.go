@@ -55,6 +55,12 @@ func (k Kiro) CLICommand(agent, prompt string) string {
 // SeedWorktree writes embedded kiro config files into the worktree.
 // Non-fatal: worktree is still usable without them.
 func (k Kiro) SeedWorktree(worktreePath, slugMode string) {
+	k.SeedWorktreeWithWenyan(worktreePath, slugMode, false)
+}
+
+// SeedWorktreeWithWenyan writes embedded kiro config files into the worktree,
+// optionally injecting wenyan-ultra thinking mode into all agents.
+func (k Kiro) SeedWorktreeWithWenyan(worktreePath, slugMode string, wenyan bool) {
 	settingsDir := filepath.Join(worktreePath, ".kiro", "settings")
 	if err := os.MkdirAll(settingsDir, 0o755); err != nil {
 		return
@@ -65,12 +71,22 @@ func (k Kiro) SeedWorktree(worktreePath, slugMode string) {
 	if err := os.MkdirAll(agentsDir, 0o755); err != nil {
 		return
 	}
-	os.WriteFile(filepath.Join(agentsDir, "implementor.json"), injectSlugMode(assets.KiroImplementorAgent, slugMode), 0o644) //nolint:errcheck
-	os.WriteFile(filepath.Join(agentsDir, "planning.json"), injectSlugMode(assets.KiroPlanningAgent, slugMode), 0o644)       //nolint:errcheck
-	os.WriteFile(filepath.Join(agentsDir, "default.json"), injectSlugMode(assets.KiroDefaultAgent, slugMode), 0o644)         //nolint:errcheck
-	os.WriteFile(filepath.Join(agentsDir, "pr-reviewer.json"), injectSlugMode(assets.KiroPRReviewerAgent, slugMode), 0o644)  //nolint:errcheck
 
-	for name, data := range map[string][]byte{"slug": assets.SlugSkill, "slugdd": assets.SlugddSkill, "CONCH_TASK": assets.ConchTaskSkill} {
+	inject := func(b []byte) []byte { return injectModes(b, slugMode, wenyan) }
+
+	os.WriteFile(filepath.Join(agentsDir, "implementor.json"), inject(assets.KiroImplementorAgent), 0o644) //nolint:errcheck
+	os.WriteFile(filepath.Join(agentsDir, "planning.json"), inject(assets.KiroPlanningAgent), 0o644)       //nolint:errcheck
+	os.WriteFile(filepath.Join(agentsDir, "default.json"), inject(assets.KiroDefaultAgent), 0o644)         //nolint:errcheck
+	os.WriteFile(filepath.Join(agentsDir, "pr-reviewer.json"), inject(assets.KiroPRReviewerAgent), 0o644)  //nolint:errcheck
+	os.WriteFile(filepath.Join(agentsDir, "slugineer.json"), inject(assets.KiroSlugineeerAgent), 0o644)    //nolint:errcheck
+
+	skills := map[string][]byte{
+		"slug":         assets.SlugSkill,
+		"slugdd":       assets.SlugddSkill,
+		"CONCH_TASK":   assets.ConchTaskSkill,
+		"wenyan-ultra": assets.WenyanUltraSkill,
+	}
+	for name, data := range skills {
 		dir := filepath.Join(worktreePath, ".kiro", "skills", name)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			continue
@@ -126,27 +142,36 @@ func (k Kiro) PRReviewPrompt(prNum int, repo, diff string) string {
 	return fmt.Sprintf("[CONCH PR REVIEW] pr:%d repo:%s\n\n%s", prNum, repo, diff)
 }
 
-// injectSlugMode prepends a slug activation preamble to the agent's prompt field.
-func injectSlugMode(b []byte, mode string) []byte {
-	if mode == "off" {
-		return b
-	}
+// injectModes prepends slug and optional wenyan preambles to the agent's prompt field.
+func injectModes(b []byte, slugMode string, wenyan bool) []byte {
 	var agent map[string]interface{}
 	if err := json.Unmarshal(b, &agent); err != nil {
 		return b
 	}
-	prefix := slugPreamble(mode)
+	prefix := ""
+	if wenyan {
+		prefix += wenyanPreamble()
+	}
+	if slugMode != "off" {
+		prefix += slugPreamble(slugMode)
+	}
 	if agent["name"] == "planning" {
 		prefix += string(assets.SlugddSkill) + "\n\n"
 	}
-	if p, ok := agent["prompt"].(string); ok {
-		agent["prompt"] = prefix + p
+	if prefix != "" {
+		if p, ok := agent["prompt"].(string); ok {
+			agent["prompt"] = prefix + p
+		}
 	}
 	out, err := json.MarshalIndent(agent, "", "  ")
 	if err != nil {
 		return b
 	}
 	return out
+}
+
+func wenyanPreamble() string {
+	return "## Thinking Mode\n\n" + string(assets.WenyanUltraSkill) + "\n\n"
 }
 
 func slugPreamble(mode string) string {

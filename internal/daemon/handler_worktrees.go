@@ -29,7 +29,7 @@ func handleWorktrees(req client.Request, database *db.DB, h harness.Harness) (cl
 			return client.Response{Error: err.Error()}, true
 		}
 		slugCfg, _ := config.Load()
-		h.SeedWorktree(wtPath, slugCfg.EffectiveSlugMode())
+		h.SeedWorktreeWithWenyan(wtPath, slugCfg.EffectiveSlugMode(), slugCfg.WenyanMode)
 		return client.Response{OK: true}, true
 
 	case "remove_worktree":
